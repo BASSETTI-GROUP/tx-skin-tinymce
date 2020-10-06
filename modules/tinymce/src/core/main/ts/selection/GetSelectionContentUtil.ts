@@ -33,17 +33,11 @@ interface TextSection {
 const isSimpleBoundary = (dom: DOMUtils, node: Node) =>
   dom.isBlock(node) || Obj.has(dom.schema.getShortEndedElements(), node.nodeName);
 
-const isContentEditableFalse = (dom: DOMUtils, node: Node) =>
-  dom.getContentEditable(node) === 'false';
-
-const isContentEditableTrueInCef = (dom: DOMUtils, node: Node) =>
-  dom.getContentEditable(node) === 'true' && dom.getContentEditableParent(node.parentNode) === 'false';
-
 const isHidden = (dom: DOMUtils, node: Node) =>
   !dom.isBlock(node) && Obj.has(dom.schema.getWhiteSpaceElements(), node.nodeName);
 
 const isBoundary = (dom: DOMUtils, node: Node) =>
-  isSimpleBoundary(dom, node) || isContentEditableFalse(dom, node) || isHidden(dom, node) || isContentEditableTrueInCef(dom, node);
+  isSimpleBoundary(dom, node) || isHidden(dom, node);
 
 const isText = (node: Node): node is Text =>
   node.nodeType === 3;
@@ -61,9 +55,8 @@ const walk = (dom: DOMUtils, walkerFn: Walker, startNode: Node, callbacks: Walke
   let next = skipStart ? walkerFn(false) : startNode;
   while (next) {
     // Walk over content editable or hidden elements
-    const isCefNode = isContentEditableFalse(dom, next);
-    if (isCefNode || isHidden(dom, next)) {
-      const stopWalking = isCefNode ? callbacks.cef(next) : callbacks.boundary(next);
+    if (isHidden(dom, next)) {
+      const stopWalking = callbacks.boundary(next);
       if (stopWalking) {
         break;
       } else {
