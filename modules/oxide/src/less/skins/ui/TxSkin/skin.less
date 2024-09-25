@@ -15,6 +15,7 @@
 @toolbar-button-height: 26px; // size of your icon
 @toolbar-button-spacing-x: 5px;
 @toolbar-button-spacing-y: 0px;
+@toolbar-button-bespoke-spacing-x: 0px; //overloaded to make room for buttons to fit in two rows on a normal richtext display
 @background-color: #fafafa;
 @toolbar-background-color: @background-color;
 @menubar-background-color: @background-color;
@@ -22,6 +23,7 @@
 @tinymce-border-color: #dfdfdf;
 @toolbar-group-separator-color: #dfdfdf;
 @toolbar-group-spacing-y: 4px;
+@toolbar-group-padding-x: 4px; //overloaded to make room for buttons to fit in two rows on a normal richtext display
 @color-black: #222f3e;
 @color-white: #fff;
 @color-tint: #207ab7;
@@ -34,6 +36,7 @@
 @font-stack: "Roboto, Tahoma",sans-serif;
 @font-weight-normal: normal;
 @font-weight-bold: bold;
+@toolbar-button-bespoke-background-color: rgba(100,100,100,0); //overloaded do remove any background color when not hovered or selected. rgb values does not matter as opacity is set at 0.
 @toolbar-button-icon-color: rgba(50, 50, 50, .8);
 @toolbar-button-text-color: rgba(20, 20, 20, .8);
 @toolbar-button-hover-background-color: multiply(white, contrast(@background-color, fade(@color-black, 15), fade(@color-black, 85)));
