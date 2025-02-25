@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-wrapper-object-types */
 const getPrototypeOf = Object.getPrototypeOf;
 
 interface Constructor<T extends Object> {
@@ -83,3 +84,8 @@ export const isArrayOf = <E>(value: any, pred: (x: any) => x is E): value is Arr
   }
   return false;
 };
+
+export const isPromiseLike = (x: any): x is Promise<unknown> =>
+  isObject(x)
+  && isFunction(x.then)
+  && isFunction(x.catch);

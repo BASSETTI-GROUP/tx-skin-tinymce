@@ -1,11 +1,12 @@
 import { Keys } from '@ephox/agar';
-import { AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloySpec, Behaviour, Button, Focusing, FocusInsideModes, Input, Keying, Memento, NativeEvents, Representing } from '@ephox/alloy';
-import { Arr, Cell, Fun, Id, Optional } from '@ephox/katamari';
+import { AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloySpec, Behaviour, Button, Disabling, Focusing, FocusInsideModes, Input, Keying, Memento, NativeEvents, Representing, SystemEvents, Tooltipping } from '@ephox/alloy';
+import { Arr, Cell, Fun, Id, Optional, Type } from '@ephox/katamari';
 import { Focus, SugarElement, Traverse } from '@ephox/sugar';
 
 import Editor from 'tinymce/core/api/Editor';
 import { UiFactoryBackstage } from 'tinymce/themes/silver/backstage/Backstage';
 
+import * as Options from '../../../api/Options';
 import { renderIconFromPack } from '../../button/ButtonSlices';
 import { onControlAttached, onControlDetached } from '../../controls/Controls';
 import { updateMenuText, UpdateMenuTextEvent } from '../../dropdown/CommonDropdown';
@@ -16,16 +17,17 @@ interface BespokeSelectApi {
   readonly getComponent: () => AlloyComponent;
 }
 
-const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage, spec: NumberInputSpec): AlloySpec => {
+const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage, spec: NumberInputSpec, btnName?: string): AlloySpec => {
   let currentComp: Optional<AlloyComponent> = Optional.none();
 
   const getValueFromCurrentComp = (comp: Optional<AlloyComponent>): string =>
     comp.map((alloyComp) => Representing.getValue(alloyComp)).getOr('');
 
-  const onSetup = onSetupEvent(editor, 'NodeChange', (api: BespokeSelectApi) => {
+  const onSetup = onSetupEvent(editor, 'NodeChange SwitchMode DisabledStateChange', (api: BespokeSelectApi) => {
     const comp = api.getComponent();
     currentComp = Optional.some(comp);
     spec.updateInputValue(comp);
+    Disabling.set(comp, !editor.selection.isEditable() || Options.isDisabled(editor));
   });
 
   const getApi = (comp: AlloyComponent): BespokeSelectApi => ({ getComponent: Fun.constant(comp) });
@@ -71,17 +73,25 @@ const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage,
   };
 
   const makeStepperButton = (action: (focusBack: boolean) => void, title: string, tooltip: string, classes: string[]) => {
+    const editorOffCellStepButton = Cell(Fun.noop);
     const translatedTooltip = backstage.shared.providers.translate(tooltip);
     const altExecuting = Id.generate('altExecuting');
+    const onSetup = onSetupEvent(editor, 'NodeChange SwitchMode DisabledStateChange', (api: BespokeSelectApi) => {
+      Disabling.set(api.getComponent(), !editor.selection.isEditable() || Options.isDisabled(editor));
+    });
 
-    const onClick = () => action(true);
+    const onClick = (comp: AlloyComponent) => {
+      if (!Disabling.isDisabled(comp)) {
+        action(true);
+      }
+    };
 
     return Button.sketch({
       dom: {
         tag: 'button',
         attributes: {
-          'title': translatedTooltip,
-          'aria-label': translatedTooltip
+          'aria-label': translatedTooltip,
+          'data-mce-name': title
         },
         classes: classes.concat(title)
       },
@@ -89,10 +99,20 @@ const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage,
         renderIconFromPack(title, backstage.shared.providers.icons)
       ],
       buttonBehaviours: Behaviour.derive([
+        Disabling.config({}),
+        Tooltipping.config(
+          backstage.shared.providers.tooltips.getConfig({
+            tooltipText: translatedTooltip
+          })
+        ),
         AddEventsBehaviour.config(altExecuting, [
-          AlloyEvents.run(NativeEvents.keydown(), (_comp, se) => {
+          onControlAttached({ onSetup, getApi }, editorOffCellStepButton),
+          onControlDetached({ getApi }, editorOffCellStepButton),
+          AlloyEvents.run(NativeEvents.keydown(), (comp, se) => {
             if (se.event.raw.keyCode === Keys.space() || se.event.raw.keyCode === Keys.enter()) {
-              action(false);
+              if (!Disabling.isDisabled(comp)) {
+                action(false);
+              }
             }
           }),
           AlloyEvents.run(NativeEvents.click(), onClick),
@@ -102,22 +122,25 @@ const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage,
       eventOrder: {
         [NativeEvents.keydown()]: [ altExecuting, 'keying' ],
         [NativeEvents.click()]: [ altExecuting, 'alloy.base.behaviour' ],
-        [NativeEvents.touchend()]: [ altExecuting, 'alloy.base.behaviour' ]
+        [NativeEvents.touchend()]: [ altExecuting, 'alloy.base.behaviour' ],
+        [SystemEvents.attachedToDom()]: [ 'alloy.base.behaviour', altExecuting, 'tooltipping' ],
+        [SystemEvents.detachedFromDom()]: [ altExecuting, 'tooltipping' ]
       }
     });
   };
 
-  const memMinus = Memento.record(makeStepperButton((focusBack) => decrease(false, focusBack), 'minus', 'Decrease font size', [ 'highlight-on-focus' ]));
-  const memPlus = Memento.record(makeStepperButton((focusBack) => increase(false, focusBack), 'plus', 'Increase font size', [ 'highlight-on-focus' ]));
+  const memMinus = Memento.record(makeStepperButton((focusBack) => decrease(false, focusBack), 'minus', 'Decrease font size', []));
+  const memPlus = Memento.record(makeStepperButton((focusBack) => increase(false, focusBack), 'plus', 'Increase font size', []));
 
   const memInput = Memento.record({
     dom: {
       tag: 'div',
-      classes: [ 'tox-input-wrapper', 'highlight-on-focus' ]
+      classes: [ 'tox-input-wrapper' ]
     },
     components: [
       Input.sketch({
         inputBehaviours: Behaviour.derive([
+          Disabling.config({}),
           AddEventsBehaviour.config(customEvents, [
             onControlAttached({ onSetup, getApi }, editorOffCell),
             onControlDetached({ getApi }, editorOffCell)
@@ -184,7 +207,10 @@ const createBespokeNumberInput = (editor: Editor, backstage: UiFactoryBackstage,
   return {
     dom: {
       tag: 'div',
-      classes: [ 'tox-number-input' ]
+      classes: [ 'tox-number-input' ],
+      attributes: {
+        ...(Type.isNonNullable(btnName) ? { 'data-mce-name': btnName } : {})
+      }
     },
     components: [
       memMinus.asSpec(),

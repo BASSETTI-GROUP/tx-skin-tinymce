@@ -11,15 +11,15 @@ import { DomModification, nu as NuModification } from '../dom/DomModification';
 
 // NB: Tsc requires AlloyEventHandler to be imported here.
 export interface CustomDetail<A> {
-  dom: StructDomSchema;
+  'dom': StructDomSchema;
   // By this stage, the components are built.
-  components: AlloyComponent[];
-  uid: string;
-  events: AlloyEventRecord;
-  apis: A;
-  eventOrder: Record<string, string[]>;
-  domModification: Optional<DomModification>;
-  originalSpec: SimpleOrSketchSpec;
+  'components': AlloyComponent[];
+  'uid': string;
+  'events': AlloyEventRecord;
+  'apis': A;
+  'eventOrder': Record<string, string[]>;
+  'domModification': Optional<DomModification>;
+  'originalSpec': SimpleOrSketchSpec;
   'debug.sketcher': string;
 }
 
@@ -49,9 +49,9 @@ const schema = StructureSchema.objOf([
       // Note, not using constant behaviour names to avoid code size of unused behaviours
       [SystemEvents.execute()]: [ 'disabling', baseBehaviour, 'toggling', 'typeaheadevents' ],
       [SystemEvents.focus()]: [ baseBehaviour, 'focusing', 'keying' ],
-      [SystemEvents.systemInit()]: [ baseBehaviour, 'disabling', 'toggling', 'representing' ],
+      [SystemEvents.systemInit()]: [ baseBehaviour, 'disabling', 'toggling', 'representing', 'tooltipping' ],
       [NativeEvents.input()]: [ baseBehaviour, 'representing', 'streaming', 'invalidating' ],
-      [SystemEvents.detachedFromDom()]: [ baseBehaviour, 'representing', 'item-events', 'tooltipping' ],
+      [SystemEvents.detachedFromDom()]: [ baseBehaviour, 'representing', 'item-events', 'toolbar-button-events', 'tooltipping' ],
       [NativeEvents.mousedown()]: [ 'focusing', baseBehaviour, 'item-type-events' ],
       [NativeEvents.touchstart()]: [ 'focusing', baseBehaviour, 'item-type-events' ],
       [NativeEvents.mouseover()]: [ 'item-type-events', 'tooltipping' ],
@@ -80,9 +80,9 @@ const toApis = <A>(info: CustomDetail<A>): A => info.apis;
 const toEvents = (info: CustomDetail<any>): AlloyEventRecord => info.events;
 
 export {
-  toInfo,
-  toDefinition,
-  toModification,
   toApis,
-  toEvents
+  toDefinition,
+  toEvents,
+  toInfo,
+  toModification
 };

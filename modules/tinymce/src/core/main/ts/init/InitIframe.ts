@@ -63,9 +63,10 @@ const getIframeHtml = (editor: Editor) => {
 };
 
 const createIframe = (editor: Editor, boxInfo: BoxInfo) => {
-  const iframeTitle = editor.translate('Rich Text Area');
+  const iframeTitle = Env.browser.isFirefox() ? Options.getIframeAriaText(editor) : 'Rich Text Area';
+  const translatedTitle = editor.translate(iframeTitle);
   const tabindex = Attribute.getOpt(SugarElement.fromDom(editor.getElement()), 'tabindex').bind(Strings.toInt);
-  const ifr = createIframeElement(editor.id, iframeTitle, Options.getIframeAttrs(editor), tabindex).dom;
+  const ifr = createIframeElement(editor.id, translatedTitle, Options.getIframeAttrs(editor), tabindex).dom;
 
   ifr.onload = () => {
     ifr.onload = null;
@@ -81,24 +82,27 @@ const createIframe = (editor: Editor, boxInfo: BoxInfo) => {
 const setupIframeBody = (editor: Editor): void => {
   // Setup iframe body
   const iframe = editor.iframeElement as HTMLIFrameElement;
-  const binder = DomEvent.bind(SugarElement.fromDom(iframe), 'load', () => {
-    binder.unbind();
-
+  const ready = () => {
     // Set the content document, now that it is available
     editor.contentDocument = iframe.contentDocument as Document;
 
     // Continue to init the editor
     InitContentBody.contentBodyLoaded(editor);
-  });
+  };
 
   // TINY-8916: Firefox has a bug in its srcdoc implementation that prevents cookies being sent so unfortunately we need
   // to fallback to legacy APIs to load the iframe content. See https://bugzilla.mozilla.org/show_bug.cgi?id=1741489
-  if (Env.browser.isFirefox()) {
+  if (Options.shouldUseDocumentWrite(editor) || Env.browser.isFirefox()) {
     const doc = editor.getDoc();
     doc.open();
     doc.write(editor.iframeHTML as string);
     doc.close();
+    ready();
   } else {
+    const binder = DomEvent.bind(SugarElement.fromDom(iframe), 'load', () => {
+      binder.unbind();
+      ready();
+    });
     iframe.srcdoc = editor.iframeHTML as string;
   }
 };

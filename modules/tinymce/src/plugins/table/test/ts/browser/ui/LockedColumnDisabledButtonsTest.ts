@@ -123,7 +123,7 @@ describe('browser.tinymce.plugins.table.LockedColumnDisabledButtonsTest', () => 
     TinyUiActions.pWaitForUi(editor, `button[aria-label="${selector}"][aria-disabled="${disabled}"]`);
 
   const pAssertMenuButtonState = (editor: Editor, selector: string, disabled: boolean) =>
-    TinyUiActions.pWaitForUi(editor, `div.tox-collection__item[title="${selector}"][aria-disabled="${disabled}"]`);
+    TinyUiActions.pWaitForUi(editor, `div.tox-collection__item[aria-label="${selector}"][aria-disabled="${disabled}"]`);
 
   const pAssertToolbarButtons = async (editor: Editor, buttons: ButtonDetails[], expectedDisabledState: boolean) => {
     for (const button of buttons) {
@@ -146,7 +146,7 @@ describe('browser.tinymce.plugins.table.LockedColumnDisabledButtonsTest', () => 
 
   const pOpenContextMenu = async (editor: Editor, target: string) => {
     await TinyUiActions.pTriggerContextMenu(editor, target, '.tox-silver-sink [role="menuitem"]');
-    await Waiter.pWait(0);
+    await Waiter.pWaitBetweenUserActions();
   };
 
   const pSelectContextMenuItem = async (editor: Editor, index: number) => {

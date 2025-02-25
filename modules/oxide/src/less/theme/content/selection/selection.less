@@ -21,7 +21,8 @@
   audio[data-mce-selected],
   object[data-mce-selected],
   embed[data-mce-selected],
-  table[data-mce-selected] {
+  table[data-mce-selected],
+  details[data-mce-selected] {
     outline: @object-block-selected-outline-width solid @object-block-selected-color;
   }
 
@@ -42,13 +43,6 @@
   *[contentEditable=false][data-mce-selected] {
     cursor: not-allowed;
     outline: @object-block-selected-outline-width solid @object-block-selected-color;
-  }
-
-  &.mce-content-readonly {
-    *[contentEditable=true]:focus,
-    *[contentEditable=true]:hover {
-      outline: none;
-    }
   }
 
   // Styles for certain selected inline elements objects, like links.

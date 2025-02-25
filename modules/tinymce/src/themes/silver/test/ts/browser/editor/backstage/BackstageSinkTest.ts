@@ -30,12 +30,15 @@ describe('browser.tinymce.themes.silver.editor.backstage.BackstageSinkTest', () 
     setup: (ed: Editor) => {
       Options.register(ed);
       ed.on('init', () => {
-        const skinUrl = EditorManager.baseURL + '/skins/ui/oxide/skin.min.css';
+        const skinUrl = EditorManager.baseURL + '/skins/ui/oxide/skin.css';
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ed.ui.styleSheetLoader.load(skinUrl).then(
           () => {
             ed.dispatch('SkinLoaded');
           }
         );
+
+        ed.ui.registry.addContext('any', Fun.always);
       });
     },
     theme: false
@@ -70,6 +73,7 @@ describe('browser.tinymce.themes.silver.editor.backstage.BackstageSinkTest', () 
 
   const buildAndAddColorInput = (backstage: Backstage.UiFactoryBackstage): AlloyComponent => {
     const colorInputSpec = backstage.shared.interpreter({
+      context: 'any',
       type: 'colorinput',
       label: Optional.some('color'),
       storageKey: 'test_storage_key',
@@ -104,6 +108,7 @@ describe('browser.tinymce.themes.silver.editor.backstage.BackstageSinkTest', () 
             dialog: () => Result.value(dialogSink)
           },
           editor,
+          Fun.die('No lazy bottom anchor bar in this test'),
           Fun.die('No lazy anchor bar in this test')
         );
       });

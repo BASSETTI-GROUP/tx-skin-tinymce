@@ -2,12 +2,13 @@ import { Arr, Fun, Optional } from '@ephox/katamari';
 import { Focus, SugarElement } from '@ephox/sugar';
 
 import * as EditorView from '../EditorView';
+import * as EditorFocus from '../focus/EditorFocus';
 import NotificationManagerImpl from '../ui/NotificationManagerImpl';
 import Editor from './Editor';
 import * as Options from './Options';
 
 export interface NotificationManagerImpl {
-  open: (spec: NotificationSpec, closeCallback: () => void) => NotificationApi;
+  open: (spec: NotificationSpec, closeCallback: () => void, hasEditorFocus: () => boolean) => NotificationApi;
   close: <T extends NotificationApi>(notification: T) => void;
   getArgs: <T extends NotificationApi>(notification: T) => NotificationSpec;
 }
@@ -18,7 +19,6 @@ export interface NotificationSpec {
   icon?: string;
   progressBar?: boolean;
   timeout?: number;
-  closeButton?: boolean;
 }
 
 export interface NotificationApi {
@@ -67,7 +67,7 @@ const NotificationManager = (editor: Editor): NotificationManager => {
   };
 
   const reposition = () => {
-    Arr.each(notifications, (notification) => {
+    getTopNotification().each((notification) => {
       notification.reposition();
     });
   };
@@ -104,14 +104,7 @@ const NotificationManager = (editor: Editor): NotificationManager => {
 
       const notification = getImplementation().open(spec, () => {
         closeNotification(notification);
-        reposition();
-        // Move focus back to editor when the last notification is closed,
-        // otherwise focus the top notification
-        getTopNotification().fold(
-          () => editor.focus(),
-          (top) => Focus.focus(SugarElement.fromDom(top.getEl()))
-        );
-      });
+      }, () => EditorFocus.hasEditorOrUiFocus(editor));
 
       addNotification(notification);
       reposition();
@@ -152,7 +145,7 @@ const NotificationManager = (editor: Editor): NotificationManager => {
 
     // NodeChange is needed for inline mode and autoresize as the positioning is done
     // from the bottom up, which changes when the content in the editor changes.
-    editor.on('show ResizeEditor ResizeWindow NodeChange', () => {
+    editor.on('show ResizeEditor ResizeWindow NodeChange ToggleView FullscreenStateChanged', () => {
       requestAnimationFrame(reposition);
     });
 
@@ -160,6 +153,17 @@ const NotificationManager = (editor: Editor): NotificationManager => {
       Arr.each(notifications.slice(), (notification) => {
         getImplementation().close(notification);
       });
+    });
+
+    editor.on('keydown', (e) => {
+      // TODO: TINY-11429 Remove this once we remove the use of keycodes
+      const isF12 = e.key?.toLowerCase() === 'f12' || e.keyCode === 123;
+      if (e.altKey && isF12) {
+        e.preventDefault();
+        getTopNotification()
+          .map((notificationApi) => SugarElement.fromDom(notificationApi.getEl()))
+          .each((elm) => Focus.focus(elm));
+      }
     });
   };
 
@@ -172,7 +176,7 @@ const NotificationManager = (editor: Editor): NotificationManager => {
      * @method open
      * @param {Object} args A <code>name: value</code> collection containing settings such as: <code>timeout</code>, <code>type</code>, and message (<code>text</code>).
      * <br /><br />
-     * For information on the available settings, see: <a href="https://www.tiny.cloud/docs/tinymce/6/creating-custom-notifications/">Create custom notifications</a>.
+     * For information on the available settings, see: <a href="https://www.tiny.cloud/docs/tinymce/7/creating-custom-notifications/">Create custom notifications</a>.
      */
     open,
 

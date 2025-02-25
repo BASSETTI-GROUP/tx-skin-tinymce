@@ -1,6 +1,5 @@
 import { context, describe, it } from '@ephox/bedrock-client';
 import { Arr, Fun, Obj } from '@ephox/katamari';
-import { PlatformDetection } from '@ephox/sand';
 import { assert } from 'chai';
 
 import Env from 'tinymce/core/api/Env';
@@ -17,7 +16,6 @@ interface ParseTestResult {
 }
 
 describe('browser.tinymce.core.html.DomParserTest', () => {
-  const browser = PlatformDetection.detect().browser;
   const schema = Schema({ valid_elements: '*[class|title]' });
   const serializer = HtmlSerializer({}, schema);
 
@@ -530,63 +528,6 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
         );
       });
 
-      it('Remove redundant br elements', () => {
-        const schema = Schema();
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse(
-          '<p>a<br></p>' +
-          '<p>a<br>b<br></p>' +
-          '<p>a<br><br></p><p>a<br><span data-mce-type="bookmark"></span><br></p>' +
-          '<p>a<span data-mce-type="bookmark"></span><br></p>'
-        );
-        assert.equal(
-          serializer.serialize(root),
-          '<p>a</p><p>a<br>b</p><p>a<br><br></p><p>a<br><br></p><p>a</p>',
-          'Remove traling br elements.'
-        );
-      });
-
-      it('Replace br with nbsp when wrapped in two inline elements and one block', () => {
-        const schema = Schema();
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse('<p><strong><em><br /></em></strong></p>');
-        assert.equal(serializer.serialize(root), '<p><strong><em>\u00a0</em></strong></p>');
-      });
-
-      it('Replace br with nbsp when wrapped in an inline element and placed in the root', () => {
-        const schema = Schema();
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse('<strong><br /></strong>');
-        assert.equal(serializer.serialize(root), '<strong>\u00a0</strong>');
-      });
-
-      it(`Don't replace br inside root element when there is multiple brs`, () => {
-        const schema = Schema();
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse('<strong><br /><br /></strong>');
-        assert.equal(serializer.serialize(root), '<strong><br><br></strong>');
-      });
-
-      it(`Don't replace br inside root element when there is siblings`, () => {
-        const schema = Schema();
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse('<strong><br /></strong><em>x</em>');
-        assert.equal(serializer.serialize(root), '<strong><br></strong><em>x</em>');
-      });
-
-      it('Remove br in invalid parent bug', () => {
-        const schema = Schema({ valid_elements: 'br' });
-
-        const parser = DomParser({ remove_trailing_brs: true, ...scenario.settings }, schema);
-        const root = parser.parse('<br>');
-        assert.equal(serializer.serialize(root), '', 'Remove traling br elements.');
-      });
-
       it('Forced root blocks', () => {
         const schema = Schema();
 
@@ -735,6 +676,19 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
         assert.equal(serializer.serialize(root), '<ul><li>\u00a0</li></ul><ul><li>\u00a0</li></ul>');
       });
 
+      it('TINY-9861: Pad empty with br', () => {
+        const schema = Schema();
+        const serializer = HtmlSerializer({ }, schema);
+
+        const parser1 = DomParser({ pad_empty_with_br: true }, schema);
+        const root1 = parser1.parse('<p>a</p><p></p>');
+        assert.equal(serializer.serialize(root1), '<p>a</p><p><br></p>');
+
+        const parser2 = DomParser({ pad_empty_with_br: false }, schema);
+        const root2 = parser2.parse('<p>a</p><p></p>');
+        assert.equal(serializer.serialize(root2), '<p>a</p><p>\u00A0</p>');
+      });
+
       it('Pad empty and prefer br on insert', () => {
         const schema = Schema();
 
@@ -809,14 +763,14 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
         );
       });
 
-      // TODO: TINY-9624 - the iframe innerHTML on safari is `&lt;textarea&gt;` whereas on other browsers
-      //       is `<textarea>`. This causes the mXSS cleaner in DOMPurify to run and causes the different assertions below
+      // TINY-9624: Safari encodes the iframe innerHTML is `&lt;textarea&gt;`. On Chrome and Firefox, the innerHTML is `<textarea>`, causing
+      // the mXSS cleaner in DOMPurify to run and remove the iframe.
       it('parse iframe XSS', () => {
         const serializer = HtmlSerializer();
 
         assert.equal(
           serializer.serialize(DomParser(scenario.settings).parse('<iframe><textarea></iframe><img src="a" onerror="alert(document.domain)" />')),
-          browser.isSafari() || !scenario.isSanitizeEnabled ? '<iframe><textarea></iframe><img src="a">' : '<img src="a">'
+          scenario.isSanitizeEnabled ? '<img src="a">' : '<iframe><textarea></iframe><img src="a">'
         );
       });
 
@@ -1443,8 +1397,8 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
         context('Transparent elements', () => {
           const getTransparentElements = (schema: Schema) => Arr.unique(Arr.map(Obj.keys(schema.getTransparentElements()), (s) => s.toLowerCase()));
 
-          const testSplitInvalidBlocksOut = (testCase: { input: string; expected: string }) => {
-            const parser = DomParser(scenario.settings);
+          const testTransparentElementsParsing = (testCase: { input: string; expected: string; domParserSettings?: DomParserSettings }) => {
+            const parser = DomParser({ ...scenario.settings, ...testCase.domParserSettings });
             const serializedHtml = serializer.serialize(parser.parse(testCase.input));
 
             assert.equal(serializedHtml, testCase.expected);
@@ -1479,35 +1433,169 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
             assert.equal(serializedHtml, expectedHtml);
           });
 
-          it('TINY-9232: H1 in H1 should unwrap to single H1', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: H1 in H1 should unwrap to single H1', () => testTransparentElementsParsing({
             input: '<h1><a href="#"><h1>foo</h1></a></h1>',
             expected: '<h1>foo</h1>'
           }));
 
-          it('TINY-9232: H1 and H2 in H1 should unwrap', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: H1 and H2 in H1 should unwrap', () => testTransparentElementsParsing({
             input: '<h1><a href="#"><h1>a</h1><h2>b</h2></a></h1>',
             expected: '<h1>a</h1><h2>b</h2>'
           }));
 
-          it('TINY-9232: H1 and H2 in H1 should unwrap but text should remain links', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: H1 and H2 in H1 should unwrap but text should remain links', () => testTransparentElementsParsing({
             input: '<h1><a href="#">a<h1>b</h1>c<h2>d</h2>e</a></h1>',
             expected: '<h1><a href="#">a</a></h1><h1>b</h1><h1><a href="#">c</a></h1><h2>d</h2><h1><a href="#">e</a></h1>'
           }));
 
-          it('TINY-9232: H1 in H1 in DIV should unwrap down to DIV', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: H1 in H1 in DIV should unwrap down to DIV', () => testTransparentElementsParsing({
             input: '<div>a<h1><a href="#"><h1>b</h1></a></h1>c</div>',
             expected: '<div>a<h1>b</h1>c</div>'
           }));
 
-          it('TINY-9232: Nested anchors wrapped in H1 and H2 should all unwrap', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: Nested anchors wrapped in H1 and H2 should all unwrap', () => testTransparentElementsParsing({
             input: '<h1><a href="#1"><h2><a href="#2"><h3>foo</h3></a></h2></a></h1>',
             expected: '<h3>foo</h3>'
           }));
 
-          it('TINY-9232: H1 with content before and after anchor should be retained but the anchor should be unwrapped', () => testSplitInvalidBlocksOut({
+          it('TINY-9232: H1 with content before and after anchor should be retained but the anchor should be unwrapped', () => testTransparentElementsParsing({
             input: '<h1>a<a href="#"><h1>foo</h1></a>b</h1>',
             expected: '<h1>a</h1><h1>foo</h1><h1>b</h1>'
           }));
+
+          it('TINY-9761: Transparent elements should not get paragraphs between them', () => testTransparentElementsParsing({
+            input: '<a href="#"><p>foo</p></a>\n<a href="#"><p>bar</p></a> \t<a href="#"><p>baz</p></a>',
+            expected: '<a href="#" data-mce-block="true"><p>foo</p></a><a href="#" data-mce-block="true"><p>bar</p></a><a href="#" data-mce-block="true"><p>baz</p></a>',
+            domParserSettings: {
+              forced_root_block: 'p'
+            }
+          }));
+        });
+      });
+
+      context('Sandboxing iframes', () => {
+        context('sandbox_iframes', () => {
+          const testSandboxIframe = (sandbox: boolean, expected: string) => () => {
+            const parser = DomParser({ ...scenario.settings, sandbox_iframes: sandbox });
+            const serialized = serializer.serialize(parser.parse('<iframe src="about:blank"></iframe>'));
+            assert.equal(serialized, expected);
+          };
+
+          it('TINY-10348: iframes should be sandboxed when sandbox_iframes: false',
+            testSandboxIframe(false, '<iframe src="about:blank"></iframe>'));
+
+          it('TINY-10348: iframes should be sandboxed when sandbox_iframes: true',
+            testSandboxIframe(true, '<iframe src="about:blank" sandbox=""></iframe>'));
+        });
+
+        context('sandbox_iframes_exclusions', () => {
+          const exclusions = [ 'tiny.cloud' ];
+          const parser = DomParser({ ...scenario.settings, sandbox_iframes: true, sandbox_iframes_exclusions: exclusions });
+
+          const testSandboxIframeExclusions = (src: string, expected: string) => () => {
+            const serialized = serializer.serialize(parser.parse(`<iframe src="${src}"></iframe>`));
+            assert.equal(serialized, expected);
+          };
+
+          it('TINY-10350: iframes should be sandboxed when sandbox_iframes: true and host is not excluded',
+            testSandboxIframeExclusions('https://www.example.com', '<iframe src="https://www.example.com" sandbox=""></iframe>'));
+
+          it('TINY-10350: iframes should not be sandboxed when sandbox_iframes: true and host is excluded',
+            testSandboxIframeExclusions('https://www.tiny.cloud', '<iframe src="https://www.tiny.cloud"></iframe>'));
+
+          it('TINY-10350: iframes with non-URL src should be sandboxed when sandbox_iframes: true',
+            testSandboxIframeExclusions('abc', '<iframe src="abc" sandbox=""></iframe>'));
+
+          it('TINY-10350: iframes with no src should be sandboxed when sandbox_iframes: true', () => {
+            const serialized = serializer.serialize(parser.parse('<iframe></iframe>'));
+            assert.equal(serialized, '<iframe sandbox=""></iframe>');
+          });
+        });
+      });
+
+      context('Convert unsafe embeds', () => {
+        const serializeEmbedHtml = (embedHtml: string, convert: boolean): string => {
+          const parser = DomParser({ ...scenario.settings, convert_unsafe_embeds: convert });
+          return serializer.serialize(parser.parse(embedHtml));
+        };
+
+        const testConversion = (embedHtml: string, expectedHtml: string) => () => {
+          const serializedHtml = serializeEmbedHtml(embedHtml, true);
+          assert.equal(serializedHtml, expectedHtml);
+        };
+
+        context('convert_unsafe_embeds: false', () => {
+          const testNoConversion = (embedHtml: string) => () => {
+            const serializedHtml = serializeEmbedHtml(embedHtml, false);
+            assert.equal(serializedHtml, embedHtml);
+          };
+
+          it('TINY-10349: Object elements should not be converted', testNoConversion('<object data="about:blank"></object>'));
+          it('TINY-10349: Object elements with a mime type should not be converted', testNoConversion('<object data="about:blank" type="image/png"></object>'));
+          it('TINY-10349: Embed elements should notr be converted', testNoConversion('<embed src="about:blank">'));
+          it('TINY-10349: Embed elements with a mime type should not be converted', testNoConversion('<embed src="about:blank" type="image/png">'));
+        });
+
+        context('convert_unsafe_embeds: true', () => {
+          it('TINY-10349: Object elements without a mime type should be converted to iframe',
+            testConversion('<object data="about:blank"></object>', '<iframe src="about:blank"></iframe>'));
+          it('TINY-10349: Object elements with an image mime type should be converted to img',
+            testConversion('<object data="about:blank" type="image/png"></object>', '<img src="about:blank">'));
+          it('TINY-10349: Object elements with a video mime type should be converted to video',
+            testConversion('<object data="about:blank" type="video/mp4"></object>', '<video src="about:blank" controls=""></video>'));
+          it('TINY-10349: Object elements with an audio mime type should be converted to audio',
+            testConversion('<object data="about:blank" type="audio/mpeg"></object>', '<audio src="about:blank" controls=""></audio>'));
+          it('TINY-10349: Object elements with other mime type should be converted to iframe',
+            testConversion('<object data="about:blank" type="application/pdf"></object>', '<iframe src="about:blank"></iframe>'));
+
+          it('TINY-10349: Embed elements without a mime type should be converted to iframe',
+            testConversion('<embed src="about:blank">', '<iframe src="about:blank"></iframe>'));
+          it('TINY-10349: Embed elements with an image mime type should be converted to img',
+            testConversion('<embed src="about:blank" type="image/png">', '<img src="about:blank">'));
+          it('TINY-10349: Embed elements with a video mime type should be converted to video',
+            testConversion('<embed src="about:blank" type="video/mp4">', '<video src="about:blank" controls=""></video>'));
+          it('TINY-10349: Embed elements with an audio mime type should be converted to audio',
+            testConversion('<embed src="about:blank" type="audio/mpeg">', '<audio src="about:blank" controls=""></audio>'));
+          it('TINY-10349: Embed elements with other mime type should be converted to iframe',
+            testConversion('<embed src="about:blank" type="application/pdf">', '<iframe src="about:blank"></iframe>'));
+        });
+
+        context('convert_unsafe_embeds: true, sandbox_iframes: true', () => {
+          const testSandboxedConversion = (embedHtml: string, expectedHtml: string) => () => {
+            const parser = DomParser({ ...scenario.settings, convert_unsafe_embeds: true, sandbox_iframes: true });
+            const serializedHtml = serializer.serialize(parser.parse(embedHtml));
+            assert.equal(serializedHtml, expectedHtml);
+          };
+
+          it('TINY-10349: Object elements without a mime type should be converted to sandboxed iframe',
+            testSandboxedConversion('<object data="about:blank"></object>', '<iframe src="about:blank" sandbox=""></iframe>'));
+
+          it('TINY-10349: Embed elements without a mime type should be converted to sandboxed iframe',
+            testSandboxedConversion('<embed src="about:blank">', '<iframe src="about:blank" sandbox=""></iframe>'));
+        });
+
+        context('convert_unsafe_embeds: true, attribute preservation', () => {
+          it('TINY-10349: Object elements should perserve width and height attributes only',
+            testConversion('<object data="about:blank" width="100" height="100" style="color: red;"></object>', '<iframe src="about:blank" width="100" height="100"></iframe>'));
+          it('TINY-10349: Object elements with an image mime type should perserve width and height attributes only',
+            testConversion('<object data="about:blank" type="image/png" width="100" height="100" style="color: red;"></object>', '<img src="about:blank" width="100" height="100">'));
+          it('TINY-10349: Object elements with a video mime type should perserve width and height attributes only',
+            testConversion('<object data="about:blank" type="video/mp4" width="100" height="100" style="color: red;"></object>', '<video src="about:blank" width="100" height="100" controls=""></video>'));
+          it('TINY-10349: Object elements with an audio mime type should not perserve other attributes only',
+            testConversion('<object data="about:blank" type="audio/mpeg" width="100" height="100" style="color: red;"></object>', '<audio src="about:blank" controls=""></audio>'));
+          it('TINY-10349: Object elements with other mime type should perserve width and height attributes only',
+            testConversion('<object data="about:blank" type="application/pdf" width="100" height="100" style="color: red;"></object>', '<iframe src="about:blank" width="100" height="100"></iframe>'));
+
+          it('TINY-10349: Embed elements should preserve width and heigth attributes only',
+            testConversion('<embed src="about:blank" width="100" height="100" style="color: red;">', '<iframe src="about:blank" width="100" height="100"></iframe>'));
+          it('TINY-10349: Embed elements with an image mime type should preserve width and height attributes only',
+            testConversion('<embed src="about:blank" type="image/png" width="100" height="100" style="color: red;">', '<img src="about:blank" width="100" height="100">'));
+          it('TINY-10349: Embed elements with a video mime type should preserve width and height attributes only',
+            testConversion('<embed src="about:blank" type="video/mp4" width="100" height="100" style="color: red;">', '<video src="about:blank" width="100" height="100" controls=""></video>'));
+          it('TINY-10349: Embed elements with an audio mime type should not preserve other attributes',
+            testConversion('<embed src="about:blank" type="audio/mpeg" width="100" height="100" style="color: red;">', '<audio src="about:blank" controls=""></audio>'));
+          it('TINY-10349: Embed elements with other mime type should preserve width and height attributes only',
+            testConversion('<embed src="about:blank" type="application/pdf" width="100" height="100" style="color: red;">', '<iframe src="about:blank" width="100" height="100"></iframe>'));
         });
       });
     });
@@ -1565,6 +1653,157 @@ describe('browser.tinymce.core.html.DomParserTest', () => {
         '<p><a>XSS</a></p>',
         '<svg><circle cx="50" cy="50" r="40" stroke="green" stroke-width="4" fill="yellow"></circle></svg>'
       ], { valid_elements: '*[*]' });
+    });
+  });
+
+  context('SVG elements', () => {
+    it('TINY-10237: Should not wrap SVGs', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '<svg></svg>foo';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<svg></svg><p>foo</p>');
+    });
+
+    // Updated for TINY-11332: Remove html elements inside SVG
+    it('TINY-10237: Should retain SVG elements as is but filter out scripts and invalid children', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '<svg><circle><desc><b>foo</b><script>alert(1)</script></desc></circle></svg>foo';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<svg><circle><desc></desc></circle></svg><p>foo</p>');
+    });
+
+    it('TINY-11332: Should retain SVG elements and keep HTML elements that are valid inside an SVG', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '<svg><a href="/docs/Web/SVG/Element/circle"><circle cx="50" cy="40" r="35" /></a><script>alert(1)</script></svg>foo';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<svg><a href="/docs/Web/SVG/Element/circle"><circle cx="50" cy="40" r="35"></circle></a></svg><p>foo</p>');
+    });
+
+    it('TINY-10237: Should retain SVG elements and keep scripts if sanitize is set to false', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '<svg><circle><desc>foo<script>alert(1)</script></desc></circle></svg>foo';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p', sanitize: false }, schema).parse(input));
+      assert.equal(serializedHtml, '<svg><circle><desc>foo<script>alert(1)</script></desc></circle></svg><p>foo</p>');
+    });
+
+    it('TINY-10273: Trim whitespace before or after but not inside SVG elements at root level', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '  <svg> <circle> </circle> </svg>  <svg> <circle> </circle> </svg>  ';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<svg> <circle> </circle> </svg><svg> <circle> </circle> </svg>');
+    });
+
+    it('TINY-10273: Trim whitespace before or after but not between or inside SVG elements when inside a block element', () => {
+      const schema = Schema();
+      schema.addValidElements('svg[*]');
+      const input = '<div>  <svg> <circle> </circle> </svg>  <svg> <circle> </circle> </svg>  </div>';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<div><svg> <circle> </circle> </svg> <svg> <circle> </circle> </svg></div>');
+    });
+  });
+
+  context('Math elements', () => {
+    it('TINY-10809: Should not wrap math elements', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '<math></math>foo';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<math></math><p>foo</p>');
+    });
+
+    it('TINY-10809: Should retain math elements as is but filter out scripts', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '<math><script>alert(1)</script><mrow><msup><mi>a</mi><mn>2</mn></msup></mrow></math>';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<math><mrow><msup><mi>a</mi><mn>2</mn></msup></mrow></math>');
+    });
+
+    it('TINY-10809: Should retain math elements and keep scripts if sanitize is set to false', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '<math><script>alert(1)</script><mrow><msup><mi>a</mi><mn>2</mn></msup></mrow></math>';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p', sanitize: false }, schema).parse(input));
+      assert.equal(serializedHtml, '<math><script>alert(1)</script><mrow><msup><mi>a</mi><mn>2</mn></msup></mrow></math>');
+    });
+
+    it('TINY-10809: Trim whitespace before or after but not inside math elements at root level', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '  <math> <mrow> <msup><mi>a</mi><mn>2</mn> </msup> </mrow> </math> ';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<math> <mrow> <msup><mi>a</mi><mn>2</mn> </msup> </mrow> </math>');
+    });
+
+    it('TINY-10809: Trim whitespace before or after but not between or inside math elements when inside a block element', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '<div>  <math> <mrow> </mrow> </math>  <math> <mtro> </mrow> </math>  </div>';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ forced_root_block: 'p' }, schema).parse(input));
+      assert.equal(serializedHtml, '<div><math> <mrow> </mrow> </math> <math> </math></div>');
+    });
+
+    it('TINY-11755: Should retain semantics and annotations if allow_mathml_annotation_encodings is set', () => {
+      const schema = Schema();
+      schema.addValidElements('math[*]');
+      const input = '<math><semantics><annotation encoding="-x-custom-mime">annotation1</annotation><annotation encoding="text/html">annotation2</annotation></semantics></math>';
+      const serializedHtml = HtmlSerializer({}, schema).serialize(DomParser({ allow_mathml_annotation_encodings: [ '-x-custom-mime' ] }, schema).parse(input));
+      assert.equal(serializedHtml, '<math><semantics><annotation encoding="-x-custom-mime">annotation1</annotation></semantics></math>');
+    });
+  });
+
+  context('Special elements', () => {
+    const schema = Schema({ extended_valid_elements: 'script,noembed,xmp', valid_children: '+body[style]' });
+
+    const testSpecialElement = (testCase: { input: string; expected: string }) => {
+      const fragment = DomParser({ forced_root_block: 'p', sanitize: false }, schema).parse(testCase.input);
+      const serializedHtml = HtmlSerializer({}, schema).serialize(fragment);
+
+      assert.equal(serializedHtml, testCase.expected);
+    };
+
+    it('TINY-11019: Should not entity encode text in script elements', () => testSpecialElement({
+      input: '<script>if (a < b) alert(1)</script>',
+      expected: '<script>if (a < b) alert(1)</script>'
+    }));
+
+    it('TINY-11053: HTML and head elements should be ignored.', () => testSpecialElement({
+      input: '<html><head><!--comment 1--></head><body><!--comment 2--><body></html>',
+      expected: '<!--comment 2-->'
+    }));
+
+    it('TINY-11019: Should not entity encode text in style elements', () => testSpecialElement({
+      input: '<style>b > i {}</style>',
+      expected: '<style>b > i {}</style>'
+    }));
+
+    it('TINY-11019: Should not entity decode text inside textarea elements', () => testSpecialElement({
+      input: '<div><textarea>&lt;&gt;&amp;</textarea></div>',
+      expected: '<div><textarea>&lt;&gt;&amp;</textarea></div>'
+    }));
+
+    it('TINY-11019: Should not entity encode text inside textarea elements', () => testSpecialElement({
+      input: '<div><textarea><b>test</b></textarea></div>',
+      expected: '<div><textarea>&lt;b&gt;test&lt;/b&gt;</textarea></div>'
+    }));
+
+    const excluded = [ 'script', 'style', 'title', 'plaintext', 'textarea' ];
+    const specialElements = Arr.filter(Obj.keys(schema.getSpecialElements()), (name) => !Arr.contains(excluded, name));
+    Arr.each(specialElements, (elementName) => {
+      it(`TINY-11019: Should not entity decode text inside ${elementName} elements`, () => testSpecialElement({
+        input: `<div><${elementName}>&lt;&gt;&amp;</${elementName}></div>`,
+        expected: `<div><${elementName}>&lt;&gt;&amp;</${elementName}></div>`
+      }));
+
+      it(`TINY-11019: Should not entity encode elements inside ${elementName} elements`, () => testSpecialElement({
+        input: `<div><${elementName}><em>test</em></${elementName}></div>`,
+        expected: `<div><${elementName}><em>test</em></${elementName}></div>`
+      }));
     });
   });
 });

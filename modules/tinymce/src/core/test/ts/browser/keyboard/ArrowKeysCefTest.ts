@@ -4,7 +4,6 @@ import { TinyAssertions, TinyContentActions, TinyHooks, TinySelections } from '@
 import { assert } from 'chai';
 
 import Editor from 'tinymce/core/api/Editor';
-import Env from 'tinymce/core/api/Env';
 import * as CaretContainer from 'tinymce/core/caret/CaretContainer';
 import * as NodeType from 'tinymce/core/dom/NodeType';
 
@@ -43,9 +42,6 @@ describe('browser.tinymce.core.keyboard.ArrowKeysCefTest', () => {
     const node = editor.selection.getNode();
     assert.isTrue(f(node), 'Check selection is node');
   };
-
-  // Firefox freezes up if loading media too quickly, so we need a small wait
-  const pMediaWait = () => Env.browser.isFirefox() ? Waiter.pWait(20) : Waiter.pWait(0);
 
   const exitPreTest = (arrow: number, offset: number, expectedContent: string) => () => {
     const editor = hook.editor();
@@ -146,7 +142,7 @@ describe('browser.tinymce.core.keyboard.ArrowKeysCefTest', () => {
   it('TINY-6226: Should move to line above when large cef element is inline', async () => {
     const editor = hook.editor();
     editor.setContent('<p>Line 1</p><p><video height="400" width="200" src="custom/video.mp4" contenteditable="false"></video> Line 2</p><p>Line 3 with some more text</p>');
-    await pMediaWait();
+    await Waiter.pWaitBetweenUserActions();
     scrollTo(editor, 0, 400);
     TinySelections.setCursor(editor, [ 2, 0 ], 22);
     resetScrollCount();
@@ -161,7 +157,7 @@ describe('browser.tinymce.core.keyboard.ArrowKeysCefTest', () => {
   it('TINY-6226: Should move to line below when large cef element is on next line', async () => {
     const editor = hook.editor();
     editor.setContent('<p>Line 1</p><p><video height="400" width="200" src="custom/video.mp4" contenteditable="false"></video> Line 2</p><p>Line 3</p>');
-    await pMediaWait();
+    await Waiter.pWaitBetweenUserActions();
     scrollTo(editor, 0, 0);
     TinySelections.setCursor(editor, [ 0, 0 ], 0);
     resetScrollCount();
@@ -182,5 +178,27 @@ describe('browser.tinymce.core.keyboard.ArrowKeysCefTest', () => {
     TinyContentActions.keystroke(editor, Keys.down());
     // Checking 2 events fired verifies the event handlers finished running, so an exception shouldn't have been raised
     assertKeydownCount(2);
+  });
+
+  it('TINY-9565: Should navigate CEFs in reverse if the element has a dir attribute of rtl', () => {
+    const editor = hook.editor();
+    editor.setContent('<p dir="rtl">&#x5e2;&#x5b4;&#x5d1;<span contenteditable="false">CEF</span><span contenteditable="false">CEF</span>&#x5e2;&#x5b4;&#x5d1;</p>');
+    TinySelections.setCursor(editor, [ 0, 0 ], 3);
+    TinyContentActions.keystroke(editor, Keys.left());
+    TinyAssertions.assertSelection(editor, [ 0 ], 1, [ 0 ], 2);
+    TinyContentActions.keystroke(editor, Keys.left());
+    TinyAssertions.assertCursor(editor, [ 0, 2 ], 0);
+    TinyContentActions.keystroke(editor, Keys.left());
+    TinyAssertions.assertSelection(editor, [ 0 ], 2, [ 0 ], 3);
+    TinyContentActions.keystroke(editor, Keys.left());
+    TinyAssertions.assertCursor(editor, [ 0, 3 ], 1);
+    TinyContentActions.keystroke(editor, Keys.right());
+    TinyAssertions.assertSelection(editor, [ 0 ], 2, [ 0 ], 3);
+    TinyContentActions.keystroke(editor, Keys.right());
+    TinyAssertions.assertCursor(editor, [ 0, 2 ], 0);
+    TinyContentActions.keystroke(editor, Keys.right());
+    TinyAssertions.assertSelection(editor, [ 0 ], 1, [ 0 ], 2);
+    TinyContentActions.keystroke(editor, Keys.right());
+    TinyAssertions.assertCursor(editor, [ 0, 1 ], 0);
   });
 });

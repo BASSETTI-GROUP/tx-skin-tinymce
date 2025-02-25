@@ -16,7 +16,6 @@ import * as DomEvents from './Events';
 import * as Iframe from './modes/Iframe';
 import * as Inline from './modes/Inline';
 import { LazyUiReferences, ReadyUiReferences, SinkAndMothership } from './modes/UiReferences';
-import * as ReadOnly from './ReadOnly';
 import * as ContextToolbar from './ui/context/ContextToolbar';
 import * as FormatControls from './ui/core/FormatControls';
 import OuterContainer from './ui/general/OuterContainer';
@@ -32,6 +31,7 @@ import { renderStatusbar } from './ui/statusbar/Statusbar';
 import * as Throbber from './ui/throbber/Throbber';
 import { RenderToolbarConfig } from './ui/toolbar/Integration';
 import { ViewConfig } from './ui/view/ViewTypes';
+import * as UiState from './UiState';
 
 export interface ModeRenderInfo {
   readonly iframeContainer?: HTMLIFrameElement;
@@ -48,7 +48,7 @@ export interface RenderInfo {
     readonly getMothership: () => Gui.GuiSystem;
     readonly backstage: Backstage.UiFactoryBackstage;
   };
-  readonly renderUI: () => Promise<ModeRenderInfo>;
+  readonly renderUI: () => ModeRenderInfo;
 }
 
 export type ToolbarConfig = Array<string | Options.ToolbarGroupOption> | string | boolean;
@@ -100,6 +100,13 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
     }
   });
 
+  const memBottomAnchorBar = Memento.record({
+    dom: {
+      tag: 'div',
+      classes: [ 'tox-bottom-anchorbar' ]
+    }
+  });
+
   const lazyHeader = () => lazyUiRefs.mainUi.get()
     .map((ui) => ui.outerContainer)
     .bind(OuterContainer.getHeader);
@@ -117,6 +124,11 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
   const lazyAnchorBar = lazyUiRefs.lazyGetInOuterOrDie(
     'anchor bar',
     memAnchorBar.getOpt
+  );
+
+  const lazyBottomAnchorBar = lazyUiRefs.lazyGetInOuterOrDie(
+    'bottom anchor bar',
+    memBottomAnchorBar.getOpt
   );
 
   const lazyToolbar = lazyUiRefs.lazyGetInOuterOrDie(
@@ -137,7 +149,8 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
       dialog: lazyDialogSinkResult
     },
     editor,
-    lazyAnchorBar
+    lazyAnchorBar,
+    lazyBottomAnchorBar
   );
 
   const makeHeaderPart = (): AlloyParts.ConfiguredPart => {
@@ -374,8 +387,7 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
     const editorContainer = OuterContainer.parts.editorContainer({
       components: Arr.flatten<AlloySpec>([
         editorComponents,
-        // Inline mode does not have a status bar
-        isInline ? [ ] : statusbar.toArray()
+        isInline ? [ ] : [ memBottomAnchorBar.asSpec() ]
       ])
     });
 
@@ -406,11 +418,12 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
         },
         components: [
           editorContainer,
-          ...isInline ? [] : [ partViewWrapper ],
+          // Inline mode does not have a status bar
+          ...isInline ? [] : [ partViewWrapper, ...statusbar.toArray() ],
           partThrobber,
         ],
         behaviours: Behaviour.derive([
-          ReadOnly.receivingConfig(),
+          UiState.toggleOnReceive(() => backstages.popup.shared.providers.checkUiComponentContext('any')),
           Disabling.config({
             disableClass: 'tox-tinymce--disabled'
           }),
@@ -471,7 +484,7 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
     editor.addQueryStateHandler('ToggleToolbarDrawer', () => OuterContainer.isToolbarDrawerToggled(outerContainer));
   };
 
-  const renderUIWithRefs = (uiRefs: ReadyUiReferences): Promise<ModeRenderInfo> => {
+  const renderUIWithRefs = (uiRefs: ReadyUiReferences): ModeRenderInfo => {
     const { mainUi, popupUi, uiMotherships } = uiRefs;
     Obj.map(Options.getToolbarGroups(editor), (toolbarGroupButtonConfig, name) => {
       editor.ui.registry.addGroupToolbarButton(name, toolbarGroupButtonConfig);
@@ -517,7 +530,7 @@ const setup = (editor: Editor, setupForTheme: ThemeRenderSetup): RenderInfo => {
     return dialogUi;
   };
 
-  const renderUI = (): Promise<ModeRenderInfo> => {
+  const renderUI = (): ModeRenderInfo => {
     const mainUi = renderMainUi();
     const dialogUi = renderDialogUi();
     // If dialogUi and popupUi are the same, LazyUiReferences should handle deduplicating then

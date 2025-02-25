@@ -10,11 +10,11 @@ import { EditorUiApi } from 'tinymce/core/api/ui/Ui';
 import * as Events from '../api/Events';
 import * as Options from '../api/Options';
 import { UiFactoryBackstage } from '../backstage/Backstage';
-import * as ReadOnly from '../ReadOnly';
 import { ModeRenderInfo, RenderArgs, RenderUiConfig } from '../Render';
 import OuterContainer from '../ui/general/OuterContainer';
 import { identifyMenus } from '../ui/menus/menubar/Integration';
 import { iframe as loadIframeSkin } from '../ui/skin/Loader';
+import * as UiState from '../UiState';
 import { setToolbar } from './Toolbars';
 import { ReadyUiReferences } from './UiReferences';
 
@@ -94,12 +94,13 @@ const attachUiMotherships = (editor: Editor, uiRoot: SugarElement<HTMLElement | 
   Attachment.attachSystem(uiRoot, uiRefs.dialogUi.mothership);
 };
 
-const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: RenderUiConfig, backstage: UiFactoryBackstage, args: RenderArgs): Promise<ModeRenderInfo> => {
+const render = (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: RenderUiConfig, backstage: UiFactoryBackstage, args: RenderArgs): ModeRenderInfo => {
   const { mainUi, uiMotherships } = uiRefs;
   const lastToolbarWidth = Cell(0);
   const outerContainer = mainUi.outerContainer;
 
-  await loadIframeSkin(editor);
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  loadIframeSkin(editor);
 
   const eTargetNode = SugarElement.fromDom(args.targetNode);
   const uiRoot = SugarShadowDom.getContentContainer(SugarShadowDom.getRootNode(eTargetNode));
@@ -108,14 +109,18 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
   attachUiMotherships(editor, uiRoot, uiRefs);
 
   editor.on('PostRender', () => {
-    // Set the sidebar before the toolbar and menubar
-    // - each sidebar has an associated toggle toolbar button that needs to check the
-    //   sidebar that is set to determine its active state on setup
     OuterContainer.setSidebar(
       outerContainer,
       rawUiConfig.sidebar,
       Options.getSidebarShow(editor)
     );
+  });
+
+  // TINY-10343: Using `SkinLoaded` instead of `PostRender` because if the skin loading takes too long you run in to rendering problems since things are measured before the CSS is being applied
+  editor.on('SkinLoaded', () => {
+    // Set the sidebar before the toolbar and menubar
+    // - each sidebar has an associated toggle toolbar button that needs to check the
+    //   sidebar that is set to determine its active state on setup
 
     setToolbar(editor, uiRefs, rawUiConfig, backstage);
     lastToolbarWidth.set(editor.getWin().innerWidth);
@@ -146,11 +151,11 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
     editor.on('remove', unbinder.unbind);
   }
 
-  ReadOnly.setupReadonlyModeSwitch(editor, uiRefs);
+  UiState.setupEventsForUi(editor, uiRefs);
 
   editor.addCommand('ToggleSidebar', (_ui: boolean, value: string) => {
     OuterContainer.toggleSidebar(outerContainer, value);
-    editor.dispatch('ToggleSidebar');
+    Events.fireToggleSidebar(editor);
   });
 
   editor.addQueryValueHandler('ToggleSidebar', () => OuterContainer.whichSidebar(outerContainer) ?? '');
@@ -167,7 +172,10 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
       if (Type.isNull(OuterContainer.whichView(outerContainer))) {
         editor.focus();
         editor.nodeChanged();
+        OuterContainer.refreshToolbar(outerContainer);
       }
+
+      Events.fireToggleView(editor);
     }
   });
   editor.addQueryValueHandler('ToggleView', () => OuterContainer.whichView(outerContainer) ?? '');
@@ -191,7 +199,8 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
 
   const api: Partial<EditorUiApi> = {
     setEnabled: (state) => {
-      ReadOnly.broadcastReadonly(uiRefs, !state);
+      const eventType = state ? 'setEnabled' : 'setDisabled';
+      UiState.broadcastEvents(uiRefs, eventType);
     },
     isEnabled: () => !Disabling.isDisabled(outerContainer)
   };

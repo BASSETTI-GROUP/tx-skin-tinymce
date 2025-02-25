@@ -1,4 +1,5 @@
 import { Arr, Fun, Obj, Type } from '@ephox/katamari';
+import { NodeTypes } from '@ephox/sugar';
 
 import * as TransparentElements from '../../content/TransparentElements';
 import * as NodeType from '../../dom/NodeType';
@@ -6,13 +7,14 @@ import * as FilterNode from '../../html/FilterNode';
 import * as FilterRegistry from '../../html/FilterRegistry';
 import * as InvalidNodes from '../../html/InvalidNodes';
 import * as LegacyFilter from '../../html/LegacyFilter';
+import * as Namespace from '../../html/Namespace';
 import * as ParserFilters from '../../html/ParserFilters';
 import { isEmpty, isLineBreakNode, isPaddedWithNbsp, paddEmptyNode } from '../../html/ParserUtils';
+import { getSanitizer, internalElementAttr } from '../../html/Sanitization';
 import { BlobCache } from '../file/BlobCache';
 import Tools from '../util/Tools';
 import AstNode from './Node';
-import { getSanitizer, internalElementAttr } from './Sanitization';
-import Schema, { getTextRootBlockElements, SchemaMap, SchemaRegExpMap } from './Schema';
+import Schema, { SchemaMap, SchemaRegExpMap, getTextRootBlockElements } from './Schema';
 
 /**
  * @summary
@@ -54,17 +56,21 @@ export interface DomParserSettings {
   allow_html_in_named_anchor?: boolean;
   allow_script_urls?: boolean;
   allow_unsafe_link_target?: boolean;
+  allow_mathml_annotation_encodings?: string[];
   blob_cache?: BlobCache;
   convert_fonts_to_spans?: boolean;
+  convert_unsafe_embeds?: boolean;
   document?: Document;
   fix_list_elements?: boolean;
   font_size_legacy_values?: string;
   forced_root_block?: boolean | string;
   forced_root_block_attrs?: Record<string, string>;
   inline_styles?: boolean;
+  pad_empty_with_br?: boolean;
   preserve_cdata?: boolean;
-  remove_trailing_brs?: boolean;
   root_name?: string;
+  sandbox_iframes?: boolean;
+  sandbox_iframes_exclusions?: string[];
   sanitize?: boolean;
   validate?: boolean;
 }
@@ -82,11 +88,11 @@ interface DomParser {
 
 type WalkerCallback = (node: AstNode) => void;
 
-const transferChildren = (parent: AstNode, nativeParent: Node, specialElements: SchemaRegExpMap) => {
+const transferChildren = (parent: AstNode, nativeParent: Node, specialElements: SchemaRegExpMap, nsSanitizer: (el: Element) => void) => {
   const parentName = parent.name;
   // Exclude the special elements where the content is RCDATA as their content needs to be parsed instead of being left as plain text
   // See: https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
-  const isSpecial = parentName in specialElements && parentName !== 'title' && parentName !== 'textarea';
+  const isSpecial = parentName in specialElements && parentName !== 'title' && parentName !== 'textarea' && parentName !== 'noscript';
 
   const childNodes = nativeParent.childNodes;
   for (let ni = 0, nl = childNodes.length; ni < nl; ni++) {
@@ -99,6 +105,11 @@ const transferChildren = (parent: AstNode, nativeParent: Node, specialElements: 
         const attr = attributes[ai];
         child.attr(attr.name, attr.value);
       }
+
+      if (Namespace.isNonHtmlElementRootName(child.name)) {
+        nsSanitizer(nativeChild);
+        child.value = nativeChild.innerHTML;
+      }
     } else if (NodeType.isText(nativeChild)) {
       child.value = nativeChild.data;
       if (isSpecial) {
@@ -108,7 +119,10 @@ const transferChildren = (parent: AstNode, nativeParent: Node, specialElements: 
       child.value = nativeChild.data;
     }
 
-    transferChildren(child, nativeChild, specialElements);
+    if (!Namespace.isNonHtmlElementRootName(child.name)) {
+      transferChildren(child, nativeChild, specialElements, nsSanitizer);
+    }
+
     parent.append(child);
   }
 };
@@ -173,7 +187,8 @@ const whitespaceCleaner = (root: AstNode, schema: Schema, settings: DomParserSet
     return false;
   };
 
-  const isBlock = (node: AstNode) => node.name in blockElements && !TransparentElements.isTransparentAstInline(schema, node);
+  const isBlock = (node: AstNode) =>
+    node.name in blockElements || TransparentElements.isTransparentAstBlock(schema, node) || (Namespace.isNonHtmlElementRootName(node.name) && node.parent === root);
 
   const isAtEdgeOfBlock = (node: AstNode, start: boolean): boolean => {
     const neighbour = start ? node.prev : node.next;
@@ -199,6 +214,8 @@ const whitespaceCleaner = (root: AstNode, schema: Schema, settings: DomParserSet
 
         if (text.length === 0) {
           node.remove();
+        } else if (text === ' ' && node.prev && node.prev.type === NodeTypes.COMMENT && node.next && node.next.type === NodeTypes.COMMENT) {
+          node.remove();
         } else {
           node.value = text;
         }
@@ -214,7 +231,7 @@ const whitespaceCleaner = (root: AstNode, schema: Schema, settings: DomParserSet
         const isNodeEmpty = isEmpty(schema, nonEmptyElements, whitespaceElements, node);
 
         if (elementRule.paddInEmptyBlock && isNodeEmpty && isTextRootBlockEmpty(node)) {
-          paddEmptyNode(args, isBlock, node);
+          paddEmptyNode(settings, args, isBlock, node);
         } else if (elementRule.removeEmpty && isNodeEmpty) {
           if (isBlock(node)) {
             node.remove();
@@ -222,7 +239,7 @@ const whitespaceCleaner = (root: AstNode, schema: Schema, settings: DomParserSet
             node.unwrap();
           }
         } else if (elementRule.paddEmpty && (isNodeEmpty || isPaddedWithNbsp(node))) {
-          paddEmptyNode(args, isBlock, node);
+          paddEmptyNode(settings, args, isBlock, node);
         }
       }
     } else if (node.type === 3) {
@@ -269,7 +286,7 @@ const DomParser = (settings: DomParserSettings = {}, schema = Schema()): DomPars
   };
 
   const parser = new DOMParser();
-  const sanitize = getSanitizer(defaultedSettings, schema);
+  const sanitizer = getSanitizer(defaultedSettings, schema);
 
   const parseAndSanitizeWithContext = (html: string, rootName: string, format: string = 'html'): Element => {
     const mimeType = format === 'xhtml' ? 'application/xhtml+xml' : 'text/html';
@@ -277,10 +294,19 @@ const DomParser = (settings: DomParserSettings = {}, schema = Schema()): DomPars
     // special element then we need to wrap it so the internal content is handled appropriately.
     const isSpecialRoot = Obj.has(schema.getSpecialElements(), rootName.toLowerCase());
     const content = isSpecialRoot ? `<${rootName}>${html}</${rootName}>` : html;
-    // If parsing XHTML then the content must contain the xmlns declaration, see https://www.w3.org/TR/xhtml1/normative.html#strict
-    const wrappedHtml = format === 'xhtml' ? `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${content}</body></html>` : `<body>${content}</body>`;
-    const body = parser.parseFromString(wrappedHtml, mimeType).body;
-    sanitize(body, mimeType);
+    const makeWrap = () => {
+      if (format === 'xhtml') {
+        // If parsing XHTML then the content must contain the xmlns declaration, see https://www.w3.org/TR/xhtml1/normative.html#strict
+        return `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${content}</body></html>`;
+      } else if (/^[\s]*<head/i.test(html) || /^[\s]*<html/i.test(html) || /^[\s]*<!DOCTYPE/i.test(html)) {
+        return `<html>${content}</html>`;
+      } else {
+        return `<body>${content}</body>`;
+      }
+    };
+
+    const body = parser.parseFromString(makeWrap(), mimeType).body;
+    sanitizer.sanitizeHtmlElement(body, mimeType);
     return isSpecialRoot ? body.firstChild as Element : body;
   };
 
@@ -358,7 +384,7 @@ const DomParser = (settings: DomParserSettings = {}, schema = Schema()): DomPars
 
   const isWrappableNode = (blockElements: SchemaMap, node: AstNode) => {
     const isInternalElement = Type.isString(node.attr(internalElementAttr));
-    const isInlineElement = node.type === 1 && (!Obj.has(blockElements, node.name) && !TransparentElements.isTransparentAstBlock(schema, node));
+    const isInlineElement = node.type === 1 && (!Obj.has(blockElements, node.name) && !TransparentElements.isTransparentAstBlock(schema, node)) && !Namespace.isNonHtmlElementRootName(node.name);
 
     return node.type === 3 || (isInlineElement && !isInternalElement);
   };
@@ -436,7 +462,7 @@ const DomParser = (settings: DomParserSettings = {}, schema = Schema()): DomPars
 
     // Create the AST representation
     const rootNode = new AstNode(rootName, 11);
-    transferChildren(rootNode, element, schema.getSpecialElements());
+    transferChildren(rootNode, element, schema.getSpecialElements(), sanitizer.sanitizeNamespaceElement);
 
     // This next line is needed to fix a memory leak in chrome and firefox.
     // For more information see TINY-9186

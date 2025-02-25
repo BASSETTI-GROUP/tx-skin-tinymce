@@ -4,7 +4,7 @@ import { Cell, Optional, Type } from '@ephox/katamari';
 import { Attribute, Class, Css, Height, Ready, SugarElement, Width } from '@ephox/sugar';
 
 import { ComposingConfigs } from '../alien/ComposingConfigs';
-import { RepresentingConfigs } from '../alien/RepresentingConfigs';
+import * as RepresentingConfigs from '../alien/RepresentingConfigs';
 
 type ImagePreviewSpec = Omit<Dialog.ImagePreview, 'type'>;
 
@@ -100,6 +100,7 @@ export const renderImagePreview = (spec: ImagePreviewSpec, initialData: Optional
 
       applyFramePositioning();
 
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       Ready.image(img).then((img) => {
         // Ensure the component hasn't been removed while the image was loading
         // if it is disconnected, just do nothing

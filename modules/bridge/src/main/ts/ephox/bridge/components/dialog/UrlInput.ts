@@ -1,5 +1,5 @@
 import { StructureSchema, FieldSchema } from '@ephox/boulder';
-import { Result } from '@ephox/katamari';
+import { Optional, Result } from '@ephox/katamari';
 
 import * as ComponentSchema from '../../core/ComponentSchema';
 import { FormComponentWithLabel, FormComponentWithLabelSpec, formComponentWithLabelFields } from './FormComponent';
@@ -8,12 +8,16 @@ export interface UrlInputSpec extends FormComponentWithLabelSpec {
   type: 'urlinput';
   filetype?: 'image' | 'media' | 'file';
   enabled?: boolean;
+  picker_text?: string;
+  context?: string;
 }
 
 export interface UrlInput extends FormComponentWithLabel {
   type: 'urlinput';
   filetype: 'image' | 'media' | 'file';
   enabled: boolean;
+  picker_text: Optional<string>;
+  context: string;
 }
 
 export interface UrlInputData {
@@ -25,7 +29,9 @@ export interface UrlInputData {
 
 const urlInputFields = formComponentWithLabelFields.concat([
   FieldSchema.defaultedStringEnum('filetype', 'file', [ 'image', 'media', 'file' ]),
-  ComponentSchema.enabled
+  ComponentSchema.enabled,
+  FieldSchema.optionString('picker_text'),
+  FieldSchema.defaultedString('context', 'mode:design')
 ]);
 
 export const urlInputSchema = StructureSchema.objOf(urlInputFields);

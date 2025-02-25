@@ -1,6 +1,7 @@
-import { Keys, Waiter } from '@ephox/agar';
+import { Keys, Mouse, Waiter } from '@ephox/agar';
 import { describe, it } from '@ephox/bedrock-client';
-import { TinyAssertions, TinyHooks, TinySelections, TinyUiActions } from '@ephox/wrap-mcagar';
+import { TinyAssertions, TinyDom, TinyHooks, TinySelections, TinyUiActions } from '@ephox/wrap-mcagar';
+import { assert } from 'chai';
 
 import Editor from 'tinymce/core/api/Editor';
 import Plugin from 'tinymce/plugins/image/Plugin';
@@ -15,8 +16,7 @@ describe('browser.tinymce.plugins.image.ContextMenuTest', () => {
   }, [ Plugin ], true);
 
   const pOpenContextMenu = async (editor: Editor, target: string) => {
-    // Not sure why this is needed, but without the browser deselects the contextmenu target
-    await Waiter.pWait(0);
+    await Waiter.pWaitBetweenUserActions();
     await TinyUiActions.pTriggerContextMenu(editor, target, '.tox-silver-sink [role="menuitem"]');
   };
 
@@ -66,4 +66,27 @@ describe('browser.tinymce.plugins.image.ContextMenuTest', () => {
     await pWaitForAndSubmitDialog(editor);
     TinyAssertions.assertSelection(editor, [ 0 ], 0, [ 0 ], 1);
   });
+
+  it('TINY-10016: Opening context menus on a selected image in non-editable context', () => {
+    const editor = hook.editor();
+    editor.getBody().contentEditable = 'false';
+    editor.setContent('<p><img src="image.png" /></p><p>Second paragraph</p>', { format: 'raw' });
+    TinySelections.setSelection(editor, [ 0 ], 0, [ 0 ], 1);
+    Mouse.contextMenuOn(TinyDom.body(editor), 'img');
+    assert.isEmpty(document.querySelector('.tox-silver-sink')?.children);
+    TinyAssertions.assertSelection(editor, [ 0 ], 0, [ 0 ], 1);
+    editor.getBody().contentEditable = 'true';
+  });
+
+  it('TINY-10016: Opening context menus on an unselected image in non-editable context', () => {
+    const editor = hook.editor();
+    editor.getBody().contentEditable = 'false';
+    editor.setContent('<p><img src="image.png" /></p><p>Second paragraph</p>', { format: 'raw' });
+    TinySelections.setSelection(editor, [ 1, 0 ], 1, [ 1, 0 ], 1);
+    Mouse.contextMenuOn(TinyDom.body(editor), 'img');
+    assert.isEmpty(document.querySelector('.tox-silver-sink')?.children);
+    TinyAssertions.assertSelection(editor, [ 0 ], 0, [ 0 ], 1);
+    editor.getBody().contentEditable = 'true';
+  });
+
 });

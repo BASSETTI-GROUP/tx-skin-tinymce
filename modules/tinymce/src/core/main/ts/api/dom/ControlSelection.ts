@@ -1,14 +1,16 @@
-import { Arr, Obj, Throttler, Type } from '@ephox/katamari';
+import { Arr, Obj, Strings, Throttler, Type } from '@ephox/katamari';
 import { SelectorFind, Selectors, SugarElement } from '@ephox/sugar';
 
 import * as NodeType from '../../dom/NodeType';
 import * as RangePoint from '../../dom/RangePoint';
+import * as EditorFocus from '../../focus/EditorFocus';
 import Editor from '../Editor';
 import Env from '../Env';
 import * as Events from '../Events';
 import * as Options from '../Options';
 import { EditorEvent } from '../util/EventDispatcher';
 import VK from '../util/VK';
+import DOMUtils from './DOMUtils';
 import EditorSelection from './Selection';
 
 interface ControlSelection {
@@ -40,7 +42,7 @@ interface SelectedResizeHandle extends ResizeHandle {
 }
 
 const elementSelectionAttr = 'data-mce-selected';
-const controlElmSelector = 'table,img,figure.image,hr,video,span.mce-preview-object';
+const controlElmSelector = 'table,img,figure.image,hr,video,span.mce-preview-object,details';
 const abs = Math.abs;
 const round = Math.round;
 
@@ -71,7 +73,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
   const rootDocument = document;
   const rootElement = editor.getBody();
   let selectedElm: HTMLElement, selectedElmGhost: HTMLElement, resizeHelper: HTMLElement, selectedHandle: SelectedResizeHandle, resizeBackdrop: HTMLElement;
-  let startX: number, startY: number, selectedElmX: number, selectedElmY: number, startW: number, startH: number, ratio: number, resizeStarted: boolean;
+  let startX: number, startY: number, startW: number, startH: number, ratio: number, resizeStarted: boolean;
   let width: number;
   let height: number;
   let startScrollWidth: number;
@@ -114,7 +116,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
   const isResizable = (elm: Element) => {
     const selector = Options.getObjectResizing(editor);
 
-    if (!selector) {
+    if (!selector || editor.mode.isReadOnly()) {
       return false;
     }
 
@@ -133,9 +135,20 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
     }
   };
 
-  const createGhostElement = (elm: HTMLElement) => {
+  const createGhostElement = (dom: DOMUtils, elm: HTMLElement) => {
     if (isMedia(elm)) {
       return dom.create('img', { src: Env.transparentSrc });
+    } else if (NodeType.isTable(elm)) {
+      const isNorth = Strings.startsWith(selectedHandle.name, 'n');
+      const rowSelect = isNorth ? Arr.head : Arr.last;
+      const tableElm = elm.cloneNode(true) as HTMLTableElement;
+      // Get row, remove all height styles
+      rowSelect(dom.select('tr', tableElm)).each((tr) => {
+        const cells = dom.select('td,th', tr);
+        dom.setStyle(tr, 'height', null);
+        Arr.each(cells, (cell) => dom.setStyle(cell, 'height', null));
+      });
+      return tableElm;
     } else {
       return elm.cloneNode(true) as HTMLElement;
     }
@@ -210,15 +223,17 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
 
     resizeHelper.innerHTML = width + ' &times; ' + height;
 
-    // Update ghost X position if needed
-    if (selectedHandle[2] < 0 && selectedElmGhost.clientWidth <= width) {
-      dom.setStyle(selectedElmGhost, 'left', selectedElmX + (startW - width));
-    }
+    /* TODO: TINY-11702 dom.setStyle() has no effect because the value is NaN
+      // Update ghost X position if needed
+      if (selectedHandle[2] < 0 && selectedElmGhost.clientWidth <= width) {
+        dom.setStyle(selectedElmGhost, 'left', selectedElmX + (startW - width));
+      }
 
-    // Update ghost Y position if needed
-    if (selectedHandle[3] < 0 && selectedElmGhost.clientHeight <= height) {
-      dom.setStyle(selectedElmGhost, 'top', selectedElmY + (startH - height));
-    }
+      // Update ghost Y position if needed
+      if (selectedHandle[3] < 0 && selectedElmGhost.clientHeight <= height) {
+        dom.setStyle(selectedElmGhost, 'top', selectedElmY + (startH - height));
+      }
+    */
 
     // Calculate how must overflow we got
     deltaX = rootElement.scrollWidth - startScrollWidth;
@@ -324,7 +339,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
             height: '100%'
           });
 
-          selectedElmGhost = createGhostElement(selectedElm);
+          selectedElmGhost = createGhostElement(dom, selectedElm);
           dom.addClass(selectedElmGhost, 'mce-clonedresizable');
           dom.setAttrib(selectedElmGhost, 'data-mce-bogus', 'all');
           selectedElmGhost.contentEditable = 'false'; // Hides IE move layer cursor
@@ -418,7 +433,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
     const targetElm = e.type === 'mousedown' ? e.target : selection.getNode();
     const controlElm = SelectorFind.closest<HTMLElement>(SugarElement.fromDom(targetElm), controlElmSelector)
       .map((e) => e.dom)
-      .filter((e) => dom.isEditable(e.parentElement))
+      .filter((e) => dom.isEditable(e.parentElement) || (e.nodeName === 'IMG' && dom.isEditable(e)))
       .getOrUndefined();
 
     // Store the original data-mce-selected value or fallback to '1' if not set
@@ -429,7 +444,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
       img.removeAttribute(elementSelectionAttr);
     });
 
-    if (Type.isNonNullable(controlElm) && isChildOrEqual(controlElm, rootElement)) {
+    if (Type.isNonNullable(controlElm) && isChildOrEqual(controlElm, rootElement) && EditorFocus.hasEditorOrUiFocus(editor)) {
       disableGeckoResize();
       const startElm = selection.getStart(true);
 
@@ -448,6 +463,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
     Obj.each(resizeHandles, (handle) => {
       if (handle.elm) {
         dom.unbind(handle.elm);
+        // eslint-disable-next-line @typescript-eslint/no-array-delete
         delete handle.elm;
       }
     });
@@ -457,7 +473,7 @@ const ControlSelection = (selection: EditorSelection, editor: Editor): ControlSe
     try {
       // Disable object resizing on Gecko
       editor.getDoc().execCommand('enableObjectResizing', false, 'false');
-    } catch (ex) {
+    } catch {
       // Ignore
     }
   };

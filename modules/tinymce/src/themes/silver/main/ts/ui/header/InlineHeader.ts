@@ -1,6 +1,6 @@
 import { AlloyComponent, Boxes, Channels, Docking, OffsetOrigin, VerticalDir } from '@ephox/alloy';
-import { Arr, Cell, Fun, Optional, Singleton } from '@ephox/katamari';
-import { Attribute, Compare, Css, Height, Scroll, SugarBody, SugarElement, SugarLocation, Traverse, Width } from '@ephox/sugar';
+import { Arr, Cell, Fun, Optional, Optionals, Singleton } from '@ephox/katamari';
+import { Attribute, Compare, Css, Height, Scroll, SugarBody, SugarElement, SugarLocation, SugarPosition, Traverse, Width, WindowVisualViewport } from '@ephox/sugar';
 
 import DOMUtils from 'tinymce/core/api/dom/DOMUtils';
 import Editor from 'tinymce/core/api/Editor';
@@ -10,7 +10,6 @@ import { UiFactoryBackstage } from '../../backstage/Backstage';
 import { ReadyUiReferences } from '../../modes/UiReferences';
 import OuterContainer from '../general/OuterContainer';
 import * as EditorSize from '../sizing/EditorSize';
-import * as Utils from '../sizing/Utils';
 
 export interface InlineHeader {
   readonly isVisible: () => boolean;
@@ -40,6 +39,7 @@ export const InlineHeader = (
   const editorMaxWidthOpt = Options.getMaxWidthOption(editor).or(EditorSize.getWidth(editor));
   const headerBackstage = backstage.shared.header;
   const isPositionedAtTop = headerBackstage.isPositionedAtTop;
+  const minimumToolbarWidth = 150; // Value is arbitrary.
 
   const toolbarMode = Options.getToolbarMode(editor);
   const isSplitToolbar = toolbarMode === ToolbarMode.sliding || toolbarMode === ToolbarMode.floating;
@@ -108,15 +108,14 @@ export const InlineHeader = (
     floatContainer.on((container) => {
       // Update the max width of the inline toolbar
       const maxWidth = editorMaxWidthOpt.getOrThunk(() => {
-        // No max width, so use the body width, minus the left pos as the maximum
-        const bodyMargin = Utils.parseToInt(Css.get(SugarBody.body(), 'margin-left')).getOr(0);
-        return Width.get(SugarBody.body()) - SugarLocation.absolute(targetElm).left + bodyMargin;
+        // Adding 10px of margin so that the toolbar won't try to wrap
+        return WindowVisualViewport.getBounds().width - SugarLocation.viewport(targetElm).left - 10;
       });
       Css.set(container.element, 'max-width', maxWidth + 'px');
     });
   };
 
-  const updateChromePosition = (optToolbarWidth: Optional<number>) => {
+  const updateChromePosition = (isOuterContainerWidthRestored: boolean, prevScroll: Optional<SugarPosition>) => {
     floatContainer.on((container) => {
       const toolbar = OuterContainer.getToolbar(mainUi.outerContainer);
       const offset = calcToolbarOffset(toolbar);
@@ -125,15 +124,30 @@ export const InlineHeader = (
       // so we need to round this to account for that.
 
       const targetBounds = Boxes.box(targetElm);
-      const { top, left } = getOffsetParent(editor, mainUi.outerContainer.element).fold(
-        () => {
-          return {
-            top: isPositionedAtTop()
-              ? Math.max(targetBounds.y - Height.get(container.element) + offset, 0)
-              : targetBounds.bottom,
-            left: targetBounds.x,
-          };
-        },
+      const offsetParent = getOffsetParent(editor, mainUi.outerContainer.element);
+
+      const getLeft = () => offsetParent.fold(
+        () => targetBounds.x,
+        (offsetParent) => {
+          // Because for ui_mode: split, the main mothership (which includes the toolbar) is moved and added as a sibling
+          // If there's any relative position div set as the parent and the offsetParent is no longer the body,
+          // the absolute top/left positions would no longer be correct
+          // When there's a relative div and the position is the same as the toolbar container
+          // then it would produce a negative top as it needs to be positioned on top of the offsetParent
+          const offsetBox = Boxes.box(offsetParent);
+
+          const isOffsetParentBody = Compare.eq(offsetParent, SugarBody.body());
+
+          return isOffsetParentBody
+            ? targetBounds.x
+            : targetBounds.x - offsetBox.x;
+        }
+      );
+
+      const getTop = () => offsetParent.fold(
+        () => isPositionedAtTop()
+          ? Math.max(targetBounds.y - Height.get(container.element) + offset, 0)
+          : targetBounds.bottom,
         (offsetParent) => {
           // Because for ui_mode: split, the main mothership (which includes the toolbar) is moved and added as a sibling
           // If there's any relative position div set as the parent and the offsetParent is no longer the body,
@@ -148,28 +162,26 @@ export const InlineHeader = (
             ? Math.max(targetBounds.y - Height.get(container.element) + offset, 0)
             : targetBounds.y - offsetBox.y + scrollDelta - Height.get(container.element) + offset;
 
-          return {
-            top: isPositionedAtTop()
-              ? topValue
-              : targetBounds.bottom,
-            left: isOffsetParentBody
-              ? targetBounds.x
-              : targetBounds.x - offsetBox.x
-          };
+          return isPositionedAtTop()
+            ? topValue
+            : targetBounds.bottom;
         }
       );
 
-      const baseProperties = {
-        position: 'absolute',
-        left: Math.round(left) + 'px',
-        top: Math.round(top) + 'px'
-      };
+      const left = getLeft();
 
-      const widthProperties = optToolbarWidth.map(
-        (toolbarWidth: number) => {
-          const scroll = Scroll.get();
+      const widthProperties = Optionals.someIf(
+        isOuterContainerWidthRestored,
+        // This width can be used for calculating the "width" when resolving issues with flex-wrapping being triggered at the window width, despite scroll space being available to the right.
+        Math.ceil(mainUi.outerContainer.element.dom.getBoundingClientRect().width)
+      )
+      // this check is needed because if the toolbar is rendered outside of the `outerContainer` because the toolbar have `position: "fixed"`
+      // the calculate width isn't correct
+        .filter((w) => w > minimumToolbarWidth).map(
+          (toolbarWidth: number) => {
+            const scroll = prevScroll.getOr(Scroll.get());
 
-          /*
+            /*
           As the editor container can wrap its elements (due to flex-wrap), the width of the container impacts also its height. Adding a minimum width works around two problems:
 
           a) The docking behaviour (e.g. lazyContext) does not handle the situation of a very thin component near the edge of the screen very well, and actually has no concept of horizontal scroll - it only checks y values.
@@ -178,23 +190,31 @@ export const InlineHeader = (
 
           Note: this is entirely determined on the number of items in the menu and the toolbar, because when they wrap, that's what causes the height. Also, having multiple toolbars can also make it higher.
           */
-          const minimumToolbarWidth = 150; // Value is arbitrary.
+            const availableWidth = window.innerWidth - (left - scroll.left);
 
-          const availableWidth = window.innerWidth - (left - scroll.left);
+            const width = Math.max(
+              Math.min(
+                toolbarWidth,
+                availableWidth
+              ),
+              minimumToolbarWidth
+            );
 
-          const width = Math.max(
-            Math.min(
-              toolbarWidth,
-              availableWidth
-            ),
-            minimumToolbarWidth
-          );
+            if (availableWidth < toolbarWidth) {
+              Css.set(mainUi.outerContainer.element, 'width', width + 'px');
+            }
 
-          return {
-            width: width + 'px'
-          };
-        }
-      ).getOr({ });
+            return {
+              width: width + 'px'
+            };
+          }
+        ).getOr({ width: 'max-content' });
+
+      const baseProperties = {
+        position: 'absolute',
+        left: Math.round(left) + 'px',
+        top: getTop() + 'px'
+      };
 
       Css.setAll(mainUi.outerContainer.element, {
         ...baseProperties,
@@ -213,7 +233,7 @@ export const InlineHeader = (
     });
   };
 
-  const restoreAndGetCompleteOuterContainerWidth = (): Optional<number> => {
+  const restoreOuterContainerWidth = (): boolean => {
     /*
     Editors can be placed so far to the right that their left position is beyond the window width. This causes problems with flex-wrap. To solve this, set a width style on the container.
     Natural width of the container needs to be calculated first.
@@ -229,14 +249,10 @@ export const InlineHeader = (
         Css.set(mainUi.outerContainer.element, 'position', 'absolute');
         Css.set(mainUi.outerContainer.element, 'left', '0px');
         Css.remove(mainUi.outerContainer.element, 'width');
-        const w = Width.getOuter(mainUi.outerContainer.element);
-        return Optional.some(w);
-      } else {
-        return Optional.none();
+        return true;
       }
-    } else {
-      return Optional.none();
     }
+    return false;
   };
 
   const update = (stickyAction: (c: AlloyComponent) => void) => {
@@ -256,11 +272,11 @@ export const InlineHeader = (
       updateChromeWidth();
     }
 
-    // This width can be used for calculating the "width" when resolving issues with flex-wrapping being triggered at the window width, despite scroll space being available to the right.
-    const optToolbarWidth: Optional<number> = useFixedToolbarContainer ? Optional.none() : restoreAndGetCompleteOuterContainerWidth();
+    const prevScroll = Scroll.get();
+    const isOuterContainerWidthRestored = useFixedToolbarContainer ? false : restoreOuterContainerWidth();
 
     /*
-      Refresh split toolbar. Before calling refresh, we need to make sure that we have the full width (through restoreAndGet.. above), otherwise too much will be put in the overflow drawer.
+      Refresh split toolbar. Before calling refresh, we need to make sure that we have the full width (through restoreOuterContainerWidth above), otherwise too much will be put in the overflow drawer.
       A split toolbar requires a calculation to see what ends up in the "more drawer". When we don't have a split toolbar, then there is no reason to refresh the toolbar when the size changes.
     */
     if (isSplitToolbar) {
@@ -269,8 +285,18 @@ export const InlineHeader = (
 
     // Positioning
     if (!useFixedToolbarContainer) {
+      // Getting the current scroll as the previous step may have reset the scroll,
+      // We also want calculation based on the previous scroll, then restoring the scroll when everything is set.
+      const currentScroll = Scroll.get();
+      const optScroll = Optionals.someIf(prevScroll.left !== currentScroll.left, prevScroll);
+
       // This will position the container in the right spot.
-      updateChromePosition(optToolbarWidth);
+      updateChromePosition(isOuterContainerWidthRestored, optScroll);
+
+      // Restore scroll left position only if they are different, keeping the current scroll top, that shouldn't be changed
+      optScroll.each((scroll) => {
+        Scroll.to(scroll.left, currentScroll.top);
+      });
     }
 
     // Docking

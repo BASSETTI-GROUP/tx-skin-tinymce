@@ -1,6 +1,6 @@
 import { Arr, Fun, Optional } from '@ephox/katamari';
 import { CellLocation, CellNavigation, TableLookup } from '@ephox/snooker';
-import { Compare, ContentEditable, CursorPosition, Insert, SimSelection, SugarElement, SugarNode, WindowSelection } from '@ephox/sugar';
+import { Compare, ContentEditable, CursorPosition, Insert, PredicateExists, PredicateFind, SimSelection, SugarElement, SugarNode, WindowSelection } from '@ephox/sugar';
 
 import Editor from '../api/Editor';
 import * as CaretFinder from '../caret/CaretFinder';
@@ -133,17 +133,30 @@ const tabGo = (editor: Editor, isRoot: (e: SugarElement<Node>) => boolean, cell:
       return getCellFirstCursorPosition(cell);
     });
   }, (current) => {
+    if (editor.mode.isReadOnly() || !isCellInEditableTable(current)) {
+      return Optional.none();
+    }
+
     editor.execCommand('mceTableInsertRowAfter');
     // Move forward from the last cell so that we move into the first valid position in the new row
     return tabForward(editor, isRoot, current);
   });
 };
 
+const isCellInEditableTable = (cell: SugarElement<HTMLTableCellElement | HTMLTableCaptionElement>): boolean =>
+  PredicateFind.closest(cell, SugarNode.isTag('table')).exists(ContentEditable.isEditable);
+
 const tabForward = (editor: Editor, isRoot: (e: SugarElement<Node>) => boolean, cell: SugarElement<HTMLTableCellElement>) =>
-  tabGo(editor, isRoot, CellNavigation.next(cell, ContentEditable.isEditable));
+  tabGo(editor, isRoot, CellNavigation.next(cell, isCellEditable));
 
 const tabBackward = (editor: Editor, isRoot: (e: SugarElement<Node>) => boolean, cell: SugarElement<HTMLTableCellElement>) =>
-  tabGo(editor, isRoot, CellNavigation.prev(cell, ContentEditable.isEditable));
+  tabGo(editor, isRoot, CellNavigation.prev(cell, isCellEditable));
+
+const isCellEditable = (cell: SugarElement<HTMLTableCellElement>) =>
+  ContentEditable.isEditable(cell) || PredicateExists.descendant(cell, isEditableHTMLElement);
+
+const isEditableHTMLElement = (node: SugarElement<Node>) =>
+  SugarNode.isHTMLElement(node) && ContentEditable.isEditable(node);
 
 const handleTab = (editor: Editor, forward: boolean): boolean => {
   const rootElements = [ 'table', 'li', 'dl' ];

@@ -6,46 +6,46 @@ import Tools from './Tools';
 export type MappedEvent<T extends {}, K extends string> = K extends keyof T ? T[K] : any;
 
 export interface NativeEventMap {
-  'beforepaste': Event;
-  'blur': FocusEvent;
-  'beforeinput': InputEvent;
-  'click': MouseEvent;
-  'compositionend': Event;
-  'compositionstart': Event;
-  'compositionupdate': Event;
-  'contextmenu': PointerEvent;
-  'copy': ClipboardEvent;
-  'cut': ClipboardEvent;
-  'dblclick': MouseEvent;
-  'drag': DragEvent;
-  'dragdrop': DragEvent;
-  'dragend': DragEvent;
-  'draggesture': DragEvent;
-  'dragover': DragEvent;
-  'dragstart': DragEvent;
-  'drop': DragEvent;
-  'focus': FocusEvent;
-  'focusin': FocusEvent;
-  'focusout': FocusEvent;
-  'input': InputEvent;
-  'keydown': KeyboardEvent;
-  'keypress': KeyboardEvent;
-  'keyup': KeyboardEvent;
-  'mousedown': MouseEvent;
-  'mouseenter': MouseEvent;
-  'mouseleave': MouseEvent;
-  'mousemove': MouseEvent;
-  'mouseout': MouseEvent;
-  'mouseover': MouseEvent;
-  'mouseup': MouseEvent;
-  'paste': ClipboardEvent;
-  'selectionchange': Event;
-  'submit': Event;
-  'touchend': TouchEvent;
-  'touchmove': TouchEvent;
-  'touchstart': TouchEvent;
-  'touchcancel': TouchEvent;
-  'wheel': WheelEvent;
+  beforepaste: Event;
+  blur: FocusEvent;
+  beforeinput: InputEvent;
+  click: MouseEvent;
+  compositionend: Event;
+  compositionstart: Event;
+  compositionupdate: Event;
+  contextmenu: PointerEvent;
+  copy: ClipboardEvent;
+  cut: ClipboardEvent;
+  dblclick: MouseEvent;
+  drag: DragEvent;
+  dragdrop: DragEvent;
+  dragend: DragEvent;
+  draggesture: DragEvent;
+  dragover: DragEvent;
+  dragstart: DragEvent;
+  drop: DragEvent;
+  focus: FocusEvent;
+  focusin: FocusEvent;
+  focusout: FocusEvent;
+  input: InputEvent;
+  keydown: KeyboardEvent;
+  keypress: KeyboardEvent;
+  keyup: KeyboardEvent;
+  mousedown: MouseEvent;
+  mouseenter: MouseEvent;
+  mouseleave: MouseEvent;
+  mousemove: MouseEvent;
+  mouseout: MouseEvent;
+  mouseover: MouseEvent;
+  mouseup: MouseEvent;
+  paste: ClipboardEvent;
+  selectionchange: Event;
+  submit: Event;
+  touchend: TouchEvent;
+  touchmove: TouchEvent;
+  touchstart: TouchEvent;
+  touchcancel: TouchEvent;
+  wheel: WheelEvent;
 }
 
 export type EditorEvent<T> = EventUtils.NormalizedEvent<T>;
@@ -121,7 +121,7 @@ class EventDispatcher<T extends {}> {
   /**
    * Fires the specified event by name.
    * <br>
-   * <em>Deprecated in TinyMCE 6.0 and has been marked for removal in TinyMCE 7.0. Use <code>dispatch</code> instead.</em>
+   * <em>Marked for removal in TinyMCE 8.0. Use <code>dispatch</code> instead.</em>
    *
    * @method fire
    * @param {String} name Name of the event to fire.

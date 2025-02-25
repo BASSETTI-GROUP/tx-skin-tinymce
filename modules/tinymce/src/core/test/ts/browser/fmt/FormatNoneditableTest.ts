@@ -45,6 +45,8 @@ describe('browser.tinymce.core.fmt.FormatNoneditableTest', () => {
     await TinyUiActions.pWaitForUi(editor, `button[aria-label="${selector}"][aria-pressed="${active}"]`);
   };
 
+  // const hexToLower = (str: string) => str.replace(/#([A-F]|\d){6}/g, (s) => s.toLowerCase());
+
   const pTestFormat = (format: (editor: Editor) => void) => async (editor: Editor, actions: Action[]) => {
     for (const action of actions) {
       const { select, expectedHtml, pAssertBefore, pAssertAfter, selectionAfter } = action;
@@ -55,9 +57,11 @@ describe('browser.tinymce.core.fmt.FormatNoneditableTest', () => {
 
       format(editor);
 
+      // editor.setContent(hexToLower(editor.getContent()));
+
       TinyAssertions.assertContent(editor, expectedHtml);
       if (Type.isNonNullable(pAssertAfter)) {
-        pAssertAfter(editor);
+        await pAssertAfter(editor);
       }
       if (Type.isNonNullable(selectionAfter)) {
         TinyAssertions.assertSelection(
@@ -90,7 +94,7 @@ describe('browser.tinymce.core.fmt.FormatNoneditableTest', () => {
   const forecolorFormat: FormatInfo = {
     label: 'Text color',
     tag: 'span',
-    html: 'span style="color: rgb(255, 0, 0);"',
+    html: 'span style="color: #ff0000;"',
     toggle: toggleCustomFormat('forecolor', { value: '#ff0000' }),
     useToolbar: false
   };
@@ -341,7 +345,7 @@ describe('browser.tinymce.core.fmt.FormatNoneditableTest', () => {
                 },
                 {
                   select: () => TinySelections.setCursor(editor, [ 0, 1, 1, 0, 0 ], 1),
-                  expectedHtml: `<p><${format.html}>first</${format.tag}> ${noneditableBeforeHtml}<span contenteditable="true">editable</span>${noneditableAfterHtml} <${format.html}>third</${format.tag}></p>`,
+                  expectedHtml: `<p><${format.html}>first </${format.tag}>${noneditableBeforeHtml}<span contenteditable="true">editable</span>${noneditableAfterHtml}<${format.html}> third</${format.tag}></p>`,
                   pAssertAfter: pAssertToolbar(false)
                 },
               ]);

@@ -9,12 +9,12 @@ import { EditorUiApi } from 'tinymce/core/api/ui/Ui';
 import * as Events from '../api/Events';
 import * as Options from '../api/Options';
 import { UiFactoryBackstage } from '../backstage/Backstage';
-import * as ReadOnly from '../ReadOnly';
 import { ModeRenderInfo, RenderArgs, RenderUiConfig } from '../Render';
 import OuterContainer from '../ui/general/OuterContainer';
 import { InlineHeader } from '../ui/header/InlineHeader';
 import { identifyMenus } from '../ui/menus/menubar/Integration';
 import { inline as loadInlineSkin } from '../ui/skin/Loader';
+import * as UiState from '../UiState';
 import { setToolbar } from './Toolbars';
 import { ReadyUiReferences } from './UiReferences';
 
@@ -105,7 +105,7 @@ const setupEvents = (editor: Editor, targetElm: SugarElement, ui: InlineHeader, 
     elementLoad.clear();
   });
 };
-const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: RenderUiConfig, backstage: UiFactoryBackstage, args: RenderArgs): Promise<ModeRenderInfo> => {
+const render = (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: RenderUiConfig, backstage: UiFactoryBackstage, args: RenderArgs): ModeRenderInfo => {
   const { mainUi } = uiRefs;
 
   // This is used to store the reference to the header part of OuterContainer, which is
@@ -118,7 +118,8 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
   const ui = InlineHeader(editor, targetElm, uiRefs, backstage, floatContainer);
   const toolbarPersist = Options.isToolbarPersist(editor);
 
-  await loadInlineSkin(editor);
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  loadInlineSkin(editor);
 
   const render = () => {
     // Because we set the floatContainer immediately afterwards, this is just telling us
@@ -155,21 +156,32 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
     // NOTE: In UiRefs, dialogUi and popupUi refer to the same thing if ui_mode: combined
     Attachment.attachSystem(uiContainer, uiRefs.dialogUi.mothership);
 
-    // Unlike menubar below which uses OuterContainer directly, this level of abstraction is
-    // required because of the different types of toolbars available (e.g. multiple vs single)
-    setToolbar(editor, uiRefs, rawUiConfig, backstage);
+    const setup = () => {
+      // Unlike menubar below which uses OuterContainer directly, this level of abstraction is
+      // required because of the different types of toolbars available (e.g. multiple vs single)
+      setToolbar(editor, uiRefs, rawUiConfig, backstage);
 
-    OuterContainer.setMenubar(
-      mainUi.outerContainer,
-      identifyMenus(editor, rawUiConfig)
-    );
+      OuterContainer.setMenubar(
+        mainUi.outerContainer,
+        identifyMenus(editor, rawUiConfig)
+      );
 
-    // Initialise the toolbar - set initial positioning then show
-    ui.show();
+      // Initialise the toolbar - set initial positioning then show
+      ui.show();
 
-    setupEvents(editor, targetElm, ui, toolbarPersist);
+      setupEvents(editor, targetElm, ui, toolbarPersist);
 
-    editor.nodeChanged();
+      editor.nodeChanged();
+    };
+
+    if (toolbarPersist) {
+      // TINY-10482: for `toolbar_persist: true` we need to wait for the skin to be loaded before showing the toolbar/menubar.
+      // Without this, there's the occasional chance that the toolbar/menubar could be set/shown before the skin has finished
+      // loading, which causes CSS issues.
+      editor.once('SkinLoaded', setup);
+    } else {
+      setup();
+    }
   };
 
   editor.on('show', render);
@@ -186,13 +198,14 @@ const render = async (editor: Editor, uiRefs: ReadyUiReferences, rawUiConfig: Re
     }
   });
 
-  ReadOnly.setupReadonlyModeSwitch(editor, uiRefs);
+  UiState.setupEventsForUi(editor, uiRefs);
 
   const api: Partial<EditorUiApi> = {
     show: render,
     hide: ui.hide,
     setEnabled: (state) => {
-      ReadOnly.broadcastReadonly(uiRefs, !state);
+      const eventType = state ? 'setEnabled' : 'setDisabled';
+      UiState.broadcastEvents(uiRefs, eventType);
     },
     isEnabled: () => !Disabling.isDisabled(mainUi.outerContainer)
   };

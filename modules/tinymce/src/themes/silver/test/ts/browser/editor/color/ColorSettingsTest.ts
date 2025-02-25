@@ -63,11 +63,6 @@ describe('browser.tinymce.themes.silver.editor.color.ColorSettingsTest', () => {
     assert.equal(colors, expected, 'Color cols should be the same');
   };
 
-  const assertCalcCols = (editor: Editor, colors: number, expected: number) => {
-    const sqrt = Options.calcCols(colors);
-    assert.equal(sqrt, expected, 'Calced cols should be the same');
-  };
-
   const mappedColors: ExpectedColor[] = [
     {
       text: 'Black',
@@ -117,20 +112,37 @@ describe('browser.tinymce.themes.silver.editor.color.ColorSettingsTest', () => {
     assertCols(editor, 'forecolor', 5);
     assertCols(editor, 'hilitecolor', 5);
   });
+  it('TBA: getCurrentColor should use raw color styles', () => {
+    const colorSettings = [
+      '#1abc9c', 'Black',
+      'hsl(145, 63.2%, 49.0%)', 'Black',
+      'var(--red)', 'Red',
+    ];
 
-  it('TBA: calcCols', () => {
-    const editor = hook.editor();
-    assertCalcCols(editor, 1, 5);
-    assertCalcCols(editor, 2, 5);
-    assertCalcCols(editor, 3, 5);
-    assertCalcCols(editor, 4, 5);
-    assertCalcCols(editor, 5, 5);
-    assertCalcCols(editor, 8, 5);
-    assertCalcCols(editor, 9, 5);
-    assertCalcCols(editor, 10, 5);
-    assertCalcCols(editor, 25, 5);
-    assertCalcCols(editor, 26, 6);
-    assertCalcCols(editor, 36, 6);
-    assertCalcCols(editor, 37, 7);
+    const mappedColors: ExpectedColor[] = [
+      {
+        text: 'Black',
+        value: '#1abc9c',
+        type: 'choiceitem'
+      },
+      {
+        text: 'Black',
+        value: 'hsl(145, 63.2%, 49.0%)',
+        type: 'choiceitem'
+      },
+      {
+        text: 'Red',
+        value: 'var(--red)',
+        type: 'choiceitem'
+      },
+    ];
+
+    const calculatedColors = Options.mapColorsRaw(colorSettings);
+
+    Arr.each(mappedColors, (item, i) => {
+      assert.equal(calculatedColors[i].text, item.text, 'Color text should match');
+      assert.equal(calculatedColors[i].value, item.value, 'Color value should match');
+      assert.equal(calculatedColors[i].type, item.type, 'Color type should match');
+    });
   });
 });

@@ -16,6 +16,7 @@ interface BaseDialogFooterButtonSpec {
   enabled?: boolean;
   icon?: string;
   buttonType?: 'primary' | 'secondary';
+  context?: string;
 }
 
 export interface DialogFooterNormalButtonSpec extends BaseDialogFooterButtonSpec {
@@ -49,6 +50,7 @@ interface BaseDialogFooterButton {
   enabled: boolean;
   icon: Optional<string>;
   buttonType: Optional<'primary' | 'secondary'>;
+  context: string;
 }
 
 export interface DialogFooterNormalButton extends BaseDialogFooterButton {
@@ -64,10 +66,9 @@ export interface DialogFooterMenuButton extends BaseDialogFooterButton {
   items: DialogFooterToggleMenuItem[];
 }
 
-export interface DialogFooterToggleButton extends Omit<BaseDialogFooterButton, 'icon'> {
+export interface DialogFooterToggleButton extends BaseDialogFooterButton {
   type: 'togglebutton';
-  tooltip: string;
-  icon: string;
+  tooltip: Optional<string>;
   text: Optional<string>;
   active: boolean;
 }
@@ -82,7 +83,8 @@ const baseFooterButtonFields = [
   ComponentSchema.primary,
   ComponentSchema.enabled,
   // this should be defaulted to `secondary` but the implementation needs to manage the deprecation
-  FieldSchema.optionStringEnum('buttonType', [ 'primary', 'secondary' ])
+  FieldSchema.optionStringEnum('buttonType', [ 'primary', 'secondary' ]),
+  FieldSchema.defaultedString('context', 'mode:design')
 ];
 
 export const dialogFooterButtonFields = [
@@ -107,8 +109,8 @@ const menuFooterButtonFields = [
 const toggleButtonSpecFields = [
   ...baseFooterButtonFields,
   FieldSchema.requiredStringEnum('type', [ 'togglebutton' ]),
-  FieldSchema.requiredString('tooltip'),
-  ComponentSchema.icon,
+  ComponentSchema.optionalTooltip,
+  ComponentSchema.optionalIcon,
   ComponentSchema.optionalText,
   FieldSchema.defaultedBoolean('active', false)
 ];

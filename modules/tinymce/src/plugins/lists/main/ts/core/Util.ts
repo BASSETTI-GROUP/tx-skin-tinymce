@@ -1,4 +1,4 @@
-import { Arr, Fun } from '@ephox/katamari';
+import { Arr } from '@ephox/katamari';
 
 import Editor from 'tinymce/core/api/Editor';
 import { NodeChangeEvent } from 'tinymce/core/api/EventTypes';
@@ -19,16 +19,13 @@ const isWithinNonEditable = (editor: Editor, element: Element | null): boolean =
 
 const selectionIsWithinNonEditableList = (editor: Editor): boolean => {
   const parentList = Selection.getParentList(editor);
-  return isWithinNonEditable(editor, parentList);
+  return isWithinNonEditable(editor, parentList) || !editor.selection.isEditable();
 };
 
 const isWithinNonEditableList = (editor: Editor, element: Element | null): boolean => {
   const parentList = editor.dom.getParent(element, 'ol,ul,dl');
-  return isWithinNonEditable(editor, parentList);
+  return isWithinNonEditable(editor, parentList) || !editor.selection.isEditable();
 };
-
-const hasNonEditableBlocksSelected = (editor: Editor): boolean =>
-  Arr.exists(editor.selection.getSelectedBlocks(), Fun.not(editor.dom.isEditable));
 
 const setNodeChangeHandler = (editor: Editor, nodeChangeHandler: (e: NodeChangeEvent) => void): () => void => {
   const initialNode = editor.selection.getNode();
@@ -46,6 +43,5 @@ export {
   inList,
   selectionIsWithinNonEditableList,
   isWithinNonEditableList,
-  hasNonEditableBlocksSelected,
   setNodeChangeHandler
 };

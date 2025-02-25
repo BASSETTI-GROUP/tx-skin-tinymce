@@ -1,4 +1,4 @@
-import { Obj, Type } from '@ephox/katamari';
+import { Arr, Obj, Type } from '@ephox/katamari';
 import { Attribute, Insert, Remove, SugarElement, SugarShadowDom } from '@ephox/sugar';
 
 import Annotator from '../api/Annotator';
@@ -14,6 +14,7 @@ import DomParser, { DomParserSettings } from '../api/html/DomParser';
 import AstNode from '../api/html/Node';
 import Schema, { SchemaSettings } from '../api/html/Schema';
 import * as Options from '../api/Options';
+import { TinyMCE } from '../api/Tinymce';
 import UndoManager from '../api/UndoManager';
 import Delay from '../api/util/Delay';
 import Tools from '../api/util/Tools';
@@ -26,6 +27,7 @@ import * as TouchEvents from '../events/TouchEvents';
 import * as ForceBlocks from '../ForceBlocks';
 import * as NonEditableFilter from '../html/NonEditableFilter';
 import * as KeyboardOverrides from '../keyboard/KeyboardOverrides';
+import * as Disabled from '../mode/Disabled';
 import { NodeChange } from '../NodeChange';
 import * as Paste from '../paste/Paste';
 import * as Rtc from '../Rtc';
@@ -35,8 +37,11 @@ import { hasAnyRanges } from '../selection/SelectionUtils';
 import SelectionOverrides from '../SelectionOverrides';
 import * as TextPattern from '../textpatterns/TextPatterns';
 import Quirks from '../util/Quirks';
+import * as ContentCss from './ContentCss';
+import * as LicenseKeyValidation from './LicenseKeyValidation';
 
 declare const escape: any;
+declare let tinymce: TinyMCE;
 
 const DOM = DOMUtils.DOM;
 
@@ -69,16 +74,19 @@ const mkParserSettings = (editor: Editor): DomParserSettings => {
     allow_svg_data_urls: getOption('allow_svg_data_urls'),
     allow_html_in_named_anchor: getOption('allow_html_in_named_anchor'),
     allow_script_urls: getOption('allow_script_urls'),
+    allow_mathml_annotation_encodings: getOption('allow_mathml_annotation_encodings'),
     allow_unsafe_link_target: getOption('allow_unsafe_link_target'),
+    convert_unsafe_embeds: getOption('convert_unsafe_embeds'),
     convert_fonts_to_spans: getOption('convert_fonts_to_spans'),
     fix_list_elements: getOption('fix_list_elements'),
     font_size_legacy_values: getOption('font_size_legacy_values'),
     forced_root_block: getOption('forced_root_block'),
     forced_root_block_attrs: getOption('forced_root_block_attrs'),
     preserve_cdata: getOption('preserve_cdata'),
-    remove_trailing_brs: getOption('remove_trailing_brs'),
     inline_styles: getOption('inline_styles'),
     root_name: getRootName(editor),
+    sandbox_iframes: getOption('sandbox_iframes'),
+    sandbox_iframes_exclusions: Options.getSandboxIframesExclusions(editor),
     sanitize: getOption('xss_sanitization'),
     validate: true,
     blob_cache: blobCache,
@@ -112,6 +120,8 @@ const mkSerializerSettings = (editor: Editor): DomSerializerSettings => {
     ...mkSchemaSettings(editor),
     ...removeUndefined<DomSerializerSettings>({
       // SerializerSettings
+      remove_trailing_brs: getOption('remove_trailing_brs'),
+      pad_empty_with_br: getOption('pad_empty_with_br'),
       url_converter: getOption('url_converter'),
       url_converter_scope: getOption('url_converter_scope'),
 
@@ -254,14 +264,25 @@ const initEditor = (editor: Editor) => {
     initInstanceCallback.call(editor, editor);
   }
   autoFocus(editor);
+  if (Disabled.isDisabled(editor)) {
+    Disabled.toggleDisabled(editor, true);
+  }
 };
 
 const getStyleSheetLoader = (editor: Editor): StyleSheetLoader =>
   editor.inline ? editor.ui.styleSheetLoader : editor.dom.styleSheetLoader;
 
 const makeStylesheetLoadingPromises = (editor: Editor, css: string[], framedFonts: string[]): Promise<unknown>[] => {
-  const promises = [
-    getStyleSheetLoader(editor).loadAll(css)
+  const { pass: bundledCss, fail: normalCss } = Arr.partition(css, (name) => tinymce.Resource.has(ContentCss.toContentSkinResourceName(name)));
+  const bundledPromises = bundledCss.map((url) => {
+    const css = tinymce.Resource.get(ContentCss.toContentSkinResourceName(url));
+    if (Type.isString(css)) {
+      return Promise.resolve(getStyleSheetLoader(editor).loadRawCss(url, css));
+    }
+    return Promise.resolve();
+  });
+  const promises = [ ...bundledPromises,
+    getStyleSheetLoader(editor).loadAll(normalCss),
   ];
 
   if (editor.inline) {
@@ -371,6 +392,20 @@ const initEditorWithInitialContent = (editor: Editor) => {
   }
 };
 
+const startProgress = (editor: Editor) => {
+  let canceled = false;
+  const progressTimeout = setTimeout(() => {
+    if (!canceled) {
+      editor.setProgressState(true);
+    }
+  }, 500);
+  return () => {
+    clearTimeout(progressTimeout);
+    canceled = true;
+    editor.setProgressState(false);
+  };
+};
+
 const contentBodyLoaded = (editor: Editor): void => {
   const targetElm = editor.getElement();
   let doc = editor.getDoc();
@@ -389,8 +424,9 @@ const contentBodyLoaded = (editor: Editor): void => {
   // TODO: See if we actually need to disable/re-enable here
   (body as any).disabled = true;
   editor.readonly = Options.isReadOnly(editor);
+  editor._editableRoot = Options.hasEditableRoot(editor);
 
-  if (!editor.readonly) {
+  if (!Options.isDisabled(editor) && editor.hasEditableRoot()) {
     if (editor.inline && DOM.getStyle(body, 'position', true) === 'static') {
       body.style.position = 'relative';
     }
@@ -416,7 +452,7 @@ const contentBodyLoaded = (editor: Editor): void => {
     referrerPolicy: Options.getReferrerPolicy(editor),
     onSetAttrib: (e) => {
       editor.dispatch('SetAttrib', e);
-    }
+    },
   });
 
   editor.parser = createParser(editor);
@@ -447,11 +483,19 @@ const contentBodyLoaded = (editor: Editor): void => {
 
   preInit(editor);
 
+  LicenseKeyValidation.validateEditorLicenseKey(editor);
+
   setupRtcThunk.fold(() => {
-    loadContentCss(editor).then(() => initEditorWithInitialContent(editor));
+    const cancelProgress = startProgress(editor);
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    loadContentCss(editor).then(() => {
+      initEditorWithInitialContent(editor);
+      cancelProgress();
+    });
   }, (setupRtc) => {
     editor.setProgressState(true);
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     loadContentCss(editor).then(() => {
       setupRtc().then((_rtcMode) => {
         editor.setProgressState(false);

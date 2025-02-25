@@ -4,6 +4,10 @@ import Editor from '../Editor';
 
 export const registerCommands = (editor: Editor): void => {
   const applyLinkToSelection = (_command: string, _ui: boolean, value: string | { href: string }): void => {
+    if (editor.mode.isReadOnly()) {
+      return;
+    }
+
     const linkDetails = Type.isString(value) ? { href: value } : value;
     const anchor = editor.dom.getParent(editor.selection.getNode(), 'a');
 
@@ -25,16 +29,18 @@ export const registerCommands = (editor: Editor): void => {
 
   editor.editorCommands.addCommands({
     unlink: () => {
-      if (editor.selection.isCollapsed()) {
-        const elm = editor.dom.getParent(editor.selection.getStart(), 'a');
-        if (elm) {
-          editor.dom.remove(elm, true);
+      if (editor.selection.isEditable()) {
+        if (editor.selection.isCollapsed()) {
+          const elm = editor.dom.getParent(editor.selection.getStart(), 'a');
+          if (elm) {
+            editor.dom.remove(elm, true);
+          }
+
+          return;
         }
 
-        return;
+        editor.formatter.remove('link');
       }
-
-      editor.formatter.remove('link');
     },
 
     mceInsertLink: applyLinkToSelection,

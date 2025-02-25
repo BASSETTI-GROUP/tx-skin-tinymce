@@ -26,10 +26,10 @@ describe('browser.tinymce.core.delete.InlineFormatDelete', () => {
     assert.isFalse(returnVal.isSome(), 'Should return false since the operation is a noop');
   };
 
-  const doBackspace = (editor: Editor) => {
+  const doBackspace = (editor: Editor, shouldBeSome: boolean = true) => {
     const returnVal = InlineFormatDelete.backspaceDelete(editor, false);
     returnVal.each((apply) => apply());
-    assert.isTrue(returnVal.isSome(), 'Should return true since the operation should have done something');
+    assert.isTrue(shouldBeSome === returnVal.isSome(), 'Should return true since the operation should have done something');
   };
 
   const noopBackspace = (editor: Editor) => {
@@ -401,60 +401,39 @@ describe('browser.tinymce.core.delete.InlineFormatDelete', () => {
           return s.element('body', {
             children: [
               s.element('p', {
-                // firefox retains formats by default, so no new caret created
-                children: browser.isFirefox()
-                  ? [
-                    s.element('strong', {
-                      children: [
-                        s.element('em', {
-                          children: [
-                            s.element('span', {
-                              attrs: {
-                                style: str.is('text-decoration: underline;')
-                              },
-                              children: [
-                                s.element('br', {})
-                              ]
-                            })
-                          ]
-                        })
-                      ]
-                    })
-                  ]
-                  : [
-                    s.element('span', {
-                      attrs: {
-                        'id': str.is('_mce_caret'),
-                        'data-mce-bogus': str.is('1'),
-                        'data-mce-type': str.is('format-caret')
-                      },
-                      children: [
-                        s.element('strong', {
-                          children: [
-                            s.element('em', {
-                              children: [
-                                s.element('span', {
-                                  attrs: {
-                                    style: str.is('text-decoration: underline;')
-                                  },
-                                  children: [
-                                    s.text(str.is(Zwsp.ZWSP))
-                                  ]
-                                })
-                              ]
-                            })
-                          ]
-                        })
-                      ]
-                    })
-                  ]
+                children: [
+                  s.element('span', {
+                    attrs: {
+                      'id': str.is('_mce_caret'),
+                      'data-mce-bogus': str.is('1'),
+                      'data-mce-type': str.is('format-caret')
+                    },
+                    children: [
+                      s.element('strong', {
+                        children: [
+                          s.element('em', {
+                            children: [
+                              s.element('span', {
+                                attrs: {
+                                  style: str.is('text-decoration: underline;')
+                                },
+                                children: [
+                                  s.text(str.is(Zwsp.ZWSP))
+                                ]
+                              })
+                            ]
+                          })
+                        ]
+                      })
+                    ]
+                  })
+                ]
               })
             ]
           });
         })
       );
-      const selPath = browser.isFirefox() ? [ 0, 0, 0, 0 ] : [ 0, 0, 0, 0, 0, 0 ];
-      TinyAssertions.assertCursor(editor, selPath, 0);
+      TinyAssertions.assertCursor(editor, [ 0, 0, 0, 0, 0, 0 ], 0);
     };
 
     it('Backspace entire selection of block containing a single text format element', () => {
@@ -774,42 +753,30 @@ describe('browser.tinymce.core.delete.InlineFormatDelete', () => {
           return s.element('body', {
             children: [
               s.element('p', {
-                // firefox retains formats by default, so no new caret created
-                children: browser.isFirefox()
-                  ? [
-                    s.element('span', {
-                      attrs: {
-                        style: str.is('text-decoration: underline;')
-                      },
-                      children: [
-                        s.element('br', {})
-                      ]
-                    })
-                  ] : [
-                    s.element('span', {
-                      attrs: {
-                        'id': str.is('_mce_caret'),
-                        'data-mce-bogus': str.is('1'),
-                        'data-mce-type': str.is('format-caret')
-                      },
-                      children: [
-                        s.element('span', {
-                          attrs: {
-                            style: str.is('text-decoration: underline;')
-                          },
-                          children: [
-                            s.text(str.is(Zwsp.ZWSP))
-                          ]
-                        })
-                      ]
-                    })
-                  ]
+                children: [
+                  s.element('span', {
+                    attrs: {
+                      'id': str.is('_mce_caret'),
+                      'data-mce-bogus': str.is('1'),
+                      'data-mce-type': str.is('format-caret')
+                    },
+                    children: [
+                      s.element('span', {
+                        attrs: {
+                          style: str.is('text-decoration: underline;')
+                        },
+                        children: [
+                          s.text(str.is(Zwsp.ZWSP))
+                        ]
+                      })
+                    ]
+                  })
+                ]
               })
             ]
           });
         }));
-      const selPath = browser.isFirefox() ? [ 0, 0 ] : [ 0, 0, 0, 0 ];
-      TinyAssertions.assertCursor(editor, selPath, 0);
+      TinyAssertions.assertCursor(editor, [ 0, 0, 0, 0 ], 0);
     });
 
     it('Backspace selection starting at start of and ending after the end of format element containing non-text child', () => {
@@ -860,44 +827,31 @@ describe('browser.tinymce.core.delete.InlineFormatDelete', () => {
           return s.element('body', {
             children: [
               s.element('p', {
-                // firefox retains formats by default, so no new caret created
-                children: browser.isFirefox()
-                  ? [
-                    s.element('span', {
-                      attrs: {
-                        style: str.is('text-decoration: underline;')
-                      },
-                      children: [
-                        s.element('br', {})
-                      ]
-                    })
-                  ]
-                  : [
-                    s.element('span', {
-                      attrs: {
-                        'id': str.is('_mce_caret'),
-                        'data-mce-bogus': str.is('1'),
-                        'data-mce-type': str.is('format-caret')
-                      },
-                      children: [
-                        s.element('span', {
-                          attrs: {
-                            style: str.is('text-decoration: underline;')
-                          },
-                          children: [
-                            s.text(str.is(Zwsp.ZWSP))
-                          ]
-                        })
-                      ]
-                    })
-                  ]
+                children: [
+                  s.element('span', {
+                    attrs: {
+                      'id': str.is('_mce_caret'),
+                      'data-mce-bogus': str.is('1'),
+                      'data-mce-type': str.is('format-caret')
+                    },
+                    children: [
+                      s.element('span', {
+                        attrs: {
+                          style: str.is('text-decoration: underline;')
+                        },
+                        children: [
+                          s.text(str.is(Zwsp.ZWSP))
+                        ]
+                      })
+                    ]
+                  })
+                ]
               })
             ]
           });
         })
       );
-      const selPath = browser.isFirefox() ? [ 0, 0 ] : [ 0, 0, 0, 0 ];
-      TinyAssertions.assertCursor(editor, selPath, 0);
+      TinyAssertions.assertCursor(editor, [ 0, 0, 0, 0 ], 0);
     });
 
     it('Backspace partial selection from start to middle of text format element should do nothing', () => {
@@ -970,6 +924,17 @@ describe('browser.tinymce.core.delete.InlineFormatDelete', () => {
       noopBackspace(editor);
       TinyAssertions.assertContent(editor, '<p><span style="text-decoration: underline;"><img src="about:blank">a</span></p>');
       TinyAssertions.assertSelection(editor, [ 0, 0 ], 0, [ 0, 0, 1 ], 'a'.length);
+    });
+  });
+
+  context('Interactions with other elements', () => {
+    it('TINY-9807: If placed between two images the inline format should do nothing', () => {
+      const editor = hook.editor();
+      editor.setContent('<p><img id="one" src="about:blank"><img id="two" src="about:blank"></p>');
+      TinySelections.setCursor(editor, [ 0 ], 1);
+      doBackspace(editor, false);
+      TinyAssertions.assertContent(editor, '<p><img id="one" src="about:blank"><img id="two" src="about:blank"></p>');
+      TinyAssertions.assertCursor(editor, [ 0 ], 1);
     });
   });
 });

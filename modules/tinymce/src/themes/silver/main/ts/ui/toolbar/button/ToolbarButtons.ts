@@ -2,15 +2,17 @@ import {
   AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloyTriggers, Behaviour, Button as AlloyButton, Disabling, FloatingToolbarButton, Focusing,
   GuiFactory,
   Keying, Memento, NativeEvents, Replacing, SketchSpec, SplitDropdown as AlloySplitDropdown, SystemEvents, TieredData, TieredMenuTypes, Toggling,
+  Tooltipping,
   Unselecting
 } from '@ephox/alloy';
 import { Toolbar } from '@ephox/bridge';
-import { Arr, Cell, Fun, Future, Id, Merger, Optional } from '@ephox/katamari';
+import { Arr, Cell, Fun, Future, Id, Merger, Optional, Type } from '@ephox/katamari';
 import { Attribute, EventArgs, SelectorFind } from '@ephox/sugar';
 
 import { ToolbarGroupOption } from '../../../api/Options';
 import { UiFactoryBackstage, UiFactoryBackstageProviders, UiFactoryBackstageShared } from '../../../backstage/Backstage';
-import * as ReadOnly from '../../../ReadOnly';
+import * as ConvertShortcut from '../../../ui/alien/ConvertShortcut';
+import * as UiState from '../../../UiState';
 import { DisablingConfigs } from '../../alien/DisablingConfigs';
 import { detectSize } from '../../alien/FlatgridAutodetect';
 import { SimpleBehaviours } from '../../alien/SimpleBehaviours';
@@ -44,8 +46,10 @@ interface GeneralToolbarButton<T> {
   readonly icon: Optional<string>;
   readonly text: Optional<string>;
   readonly tooltip: Optional<string>;
+  readonly shortcut: Optional<string>;
   readonly onAction: (api: T) => void;
   readonly enabled: boolean;
+  readonly context: string;
 }
 
 interface ChoiceFetcher {
@@ -84,7 +88,6 @@ const getToggleApi = (component: AlloyComponent): Toolbar.ToolbarToggleButtonIns
 
 const getTooltipAttributes = (tooltip: Optional<string>, providersBackstage: UiFactoryBackstageProviders) => tooltip.map<{}>((tooltip) => ({
   'aria-label': providersBackstage.translate(tooltip),
-  'title': providersBackstage.translate(tooltip)
 })).getOr({});
 
 const focusButtonEvent = Id.generate('focus-button');
@@ -94,7 +97,9 @@ const renderCommonStructure = (
   optText: Optional<string>,
   tooltip: Optional<string>,
   behaviours: Optional<Behaviours>,
-  providersBackstage: UiFactoryBackstageProviders
+  providersBackstage: UiFactoryBackstageProviders,
+  context: string,
+  btnName?: string
 ): AlloyButtonSpec => {
   const optMemDisplayText = optText.map(
     (text) => Memento.record(renderLabel(text, ToolbarButtonClasses.Button, providersBackstage))
@@ -106,7 +111,10 @@ const renderCommonStructure = (
     dom: {
       tag: 'button',
       classes: [ ToolbarButtonClasses.Button ].concat(optText.isSome() ? [ ToolbarButtonClasses.MatchWidth ] : []),
-      attributes: getTooltipAttributes(tooltip, providersBackstage)
+      attributes: {
+        ...getTooltipAttributes(tooltip, providersBackstage),
+        ...(Type.isNonNullable(btnName) ? { 'data-mce-name': btnName } : {})
+      }
     },
     components: componentRenderPipeline([
       optMemDisplayIcon.map((mem) => mem.asSpec()),
@@ -119,13 +127,14 @@ const renderCommonStructure = (
         'alloy.base.behaviour',
         commonButtonDisplayEvent
       ],
-      [SystemEvents.attachedToDom()]: [ commonButtonDisplayEvent, 'toolbar-group-button-events' ]
+      [SystemEvents.attachedToDom()]: [ commonButtonDisplayEvent, 'toolbar-group-button-events' ],
+      [SystemEvents.detachedFromDom()]: [ commonButtonDisplayEvent, 'toolbar-group-button-events', 'tooltipping' ]
     },
 
     buttonBehaviours: Behaviour.derive(
       [
-        DisablingConfigs.toolbarButton(providersBackstage.isDisabled),
-        ReadOnly.receivingConfig(),
+        DisablingConfigs.toolbarButton(() => providersBackstage.checkUiComponentContext(context).shouldDisable),
+        UiState.toggleOnReceive(() => providersBackstage.checkUiComponentContext(context)),
         AddEventsBehaviour.config(commonButtonDisplayEvent, [
           AlloyEvents.runOnAttached((comp, _se) => UiUtils.forceInitialSize(comp)),
           AlloyEvents.run<UpdateMenuTextEvent>(updateMenuText, (comp, se) => {
@@ -148,7 +157,7 @@ const renderCommonStructure = (
   };
 };
 
-const renderFloatingToolbarButton = (spec: Toolbar.GroupToolbarButton, backstage: UiFactoryBackstage, identifyButtons: (toolbar: string | ToolbarGroupOption[]) => ToolbarGroup[], attributes: Record<string, string>): SketchSpec => {
+const renderFloatingToolbarButton = (spec: Toolbar.GroupToolbarButton, backstage: UiFactoryBackstage, identifyButtons: (toolbar: string | ToolbarGroupOption[]) => ToolbarGroup[], attributes: Record<string, string>, btnName?: string): SketchSpec => {
   const sharedBackstage = backstage.shared;
   const editorOffCell = Cell(Fun.noop);
   const specialisation = {
@@ -160,7 +169,14 @@ const renderFloatingToolbarButton = (spec: Toolbar.GroupToolbarButton, backstage
     AddEventsBehaviour.config('toolbar-group-button-events', [
       onControlAttached(specialisation, editorOffCell),
       onControlDetached(specialisation, editorOffCell)
-    ])
+    ]),
+    ...(spec.tooltip.map(
+      (t) => Tooltipping.config(
+        backstage.shared.providers.tooltips.getConfig({
+          tooltipText: backstage.shared.providers.translate(t),
+        })
+      )
+    )).toArray()
   ];
 
   return FloatingToolbarButton.sketch({
@@ -172,7 +188,7 @@ const renderFloatingToolbarButton = (spec: Toolbar.GroupToolbarButton, backstage
       toggledClass: ToolbarButtonClasses.Ticked
     },
     parts: {
-      button: renderCommonStructure(spec.icon, spec.text, spec.tooltip, Optional.some(behaviours), sharedBackstage.providers),
+      button: renderCommonStructure(spec.icon, spec.text, spec.tooltip, Optional.some(behaviours), sharedBackstage.providers, spec.context, btnName),
       toolbar: {
         dom: {
           tag: 'div',
@@ -184,9 +200,9 @@ const renderFloatingToolbarButton = (spec: Toolbar.GroupToolbarButton, backstage
   });
 };
 
-const renderCommonToolbarButton = <T>(spec: GeneralToolbarButton<T>, specialisation: Specialisation<T>, providersBackstage: UiFactoryBackstageProviders): SketchSpec => {
+const renderCommonToolbarButton = <T>(spec: GeneralToolbarButton<T>, specialisation: Specialisation<T>, providersBackstage: UiFactoryBackstageProviders, btnName?: string): SketchSpec => {
   const editorOffCell = Cell(Fun.noop);
-  const structure = renderCommonStructure(spec.icon, spec.text, spec.tooltip, Optional.none(), providersBackstage);
+  const structure = renderCommonStructure(spec.icon, spec.text, spec.tooltip, Optional.none(), providersBackstage, spec.context, btnName);
   return AlloyButton.sketch({
     dom: structure.dom,
     components: structure.components,
@@ -203,9 +219,16 @@ const renderCommonToolbarButton = <T>(spec: GeneralToolbarButton<T>, specialisat
             onControlAttached(specialisation, editorOffCell),
             onControlDetached(specialisation, editorOffCell)
           ]),
+          ...(spec.tooltip.map(
+            (t) => Tooltipping.config(
+              providersBackstage.tooltips.getConfig({
+                tooltipText: providersBackstage.translate(t) + spec.shortcut.map((shortcut) => ` (${ConvertShortcut.convertText(shortcut)})`).getOr(''),
+              })
+            )
+          )).toArray(),
           // Enable toolbar buttons by default
-          DisablingConfigs.toolbarButton(() => !spec.enabled || providersBackstage.isDisabled()),
-          ReadOnly.receivingConfig()
+          DisablingConfigs.toolbarButton(() => !spec.enabled || providersBackstage.checkUiComponentContext(spec.context).shouldDisable),
+          UiState.toggleOnReceive(() => providersBackstage.checkUiComponentContext(spec.context))
         ].concat(specialisation.toolbarButtonBehaviours)
       ),
       // Here we add the commonButtonDisplayEvent behaviour from the structure so we can listen
@@ -216,10 +239,10 @@ const renderCommonToolbarButton = <T>(spec: GeneralToolbarButton<T>, specialisat
   });
 };
 
-const renderToolbarButton = (spec: Toolbar.ToolbarButton, providersBackstage: UiFactoryBackstageProviders): SketchSpec =>
-  renderToolbarButtonWith(spec, providersBackstage, [ ]);
+const renderToolbarButton = (spec: Toolbar.ToolbarButton, providersBackstage: UiFactoryBackstageProviders, btnName?: string): SketchSpec =>
+  renderToolbarButtonWith(spec, providersBackstage, [ ], btnName);
 
-const renderToolbarButtonWith = (spec: Toolbar.ToolbarButton, providersBackstage: UiFactoryBackstageProviders, bonusEvents: AlloyEvents.AlloyEventKeyAndHandler<any>[]): SketchSpec =>
+const renderToolbarButtonWith = (spec: Toolbar.ToolbarButton, providersBackstage: UiFactoryBackstageProviders, bonusEvents: AlloyEvents.AlloyEventKeyAndHandler<any>[], btnName?: string): SketchSpec =>
   renderCommonToolbarButton(spec, {
     toolbarButtonBehaviours: (bonusEvents.length > 0 ? [
       // TODO: May have to pass through eventOrder if events start clashing
@@ -227,12 +250,12 @@ const renderToolbarButtonWith = (spec: Toolbar.ToolbarButton, providersBackstage
     ] : [ ]),
     getApi: getButtonApi,
     onSetup: spec.onSetup
-  }, providersBackstage);
+  }, providersBackstage, btnName);
 
-const renderToolbarToggleButton = (spec: Toolbar.ToolbarToggleButton, providersBackstage: UiFactoryBackstageProviders): SketchSpec =>
-  renderToolbarToggleButtonWith(spec, providersBackstage, [ ]);
+const renderToolbarToggleButton = (spec: Toolbar.ToolbarToggleButton, providersBackstage: UiFactoryBackstageProviders, btnName?: string): SketchSpec =>
+  renderToolbarToggleButtonWith(spec, providersBackstage, [ ], btnName);
 
-const renderToolbarToggleButtonWith = (spec: Toolbar.ToolbarToggleButton, providersBackstage: UiFactoryBackstageProviders, bonusEvents: AlloyEvents.AlloyEventKeyAndHandler<any>[]): SketchSpec =>
+const renderToolbarToggleButtonWith = (spec: Toolbar.ToolbarToggleButton, providersBackstage: UiFactoryBackstageProviders, bonusEvents: AlloyEvents.AlloyEventKeyAndHandler<any>[], btnName?: string): SketchSpec =>
   renderCommonToolbarButton(spec,
     {
       toolbarButtonBehaviours: [
@@ -245,7 +268,8 @@ const renderToolbarToggleButtonWith = (spec: Toolbar.ToolbarToggleButton, provid
       getApi: getToggleApi,
       onSetup: spec.onSetup
     },
-    providersBackstage
+    providersBackstage,
+    btnName
   );
 
 const fetchChoices = (getApi: (comp: AlloyComponent) => Toolbar.ToolbarSplitButtonInstanceApi, spec: ChoiceFetcher, providersBackstage: UiFactoryBackstageProviders) =>
@@ -279,13 +303,14 @@ const fetchChoices = (getApi: (comp: AlloyComponent) => Toolbar.ToolbarSplitButt
       )));
 
 // TODO: hookup onSetup and onDestroy
-const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: UiFactoryBackstageShared): SketchSpec => {
+const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: UiFactoryBackstageShared, btnName?: string): SketchSpec => {
+  const tooltipString = Cell<string>(spec.tooltip.getOr(''));
 
   const getApi = (comp: AlloyComponent): Toolbar.ToolbarSplitButtonInstanceApi => ({
     isEnabled: () => !Disabling.isDisabled(comp),
     setEnabled: (state: boolean) => Disabling.set(comp, !state),
     setIconFill: (id, value) => {
-      SelectorFind.descendant(comp.element, `svg path[id="${id}"], rect[id="${id}"]`).each((underlinePath) => {
+      SelectorFind.descendant(comp.element, `svg path[class="${id}"], rect[class="${id}"]`).each((underlinePath) => {
         Attribute.set(underlinePath, 'fill', value);
       });
     },
@@ -312,6 +337,11 @@ const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: Ui
             icon
           }))
       ),
+    setTooltip: (tooltip: string) => {
+      const translatedTooltip = sharedBackstage.providers.translate(tooltip);
+      Attribute.set(comp.element, 'aria-label', translatedTooltip);
+      tooltipString.set(tooltip);
+    }
   });
 
   const editorOffCell = Cell(Fun.noop);
@@ -323,7 +353,11 @@ const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: Ui
     dom: {
       tag: 'div',
       classes: [ ToolbarButtonClasses.SplitButton ],
-      attributes: { 'aria-pressed': false, ...getTooltipAttributes(spec.tooltip, sharedBackstage.providers) }
+      attributes: {
+        'aria-pressed': false,
+        ...getTooltipAttributes(spec.tooltip, sharedBackstage.providers),
+        ...(Type.isNonNullable(btnName) ? { 'data-mce-name': btnName } : {})
+      }
     },
 
     onExecute: (button: AlloyComponent) => {
@@ -336,19 +370,37 @@ const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: Ui
     onItemExecute: (_a, _b, _c) => { },
 
     splitDropdownBehaviours: Behaviour.derive([
-      DisablingConfigs.splitButton(sharedBackstage.providers.isDisabled),
-      ReadOnly.receivingConfig(),
       AddEventsBehaviour.config('split-dropdown-events', [
         AlloyEvents.runOnAttached((comp, _se) => UiUtils.forceInitialSize(comp)),
         AlloyEvents.run(focusButtonEvent, Focusing.focus),
         onControlAttached(specialisation, editorOffCell),
         onControlDetached(specialisation, editorOffCell)
       ]),
-      Unselecting.config({ })
+      DisablingConfigs.splitButton(() => sharedBackstage.providers.isDisabled() || sharedBackstage.providers.checkUiComponentContext(spec.context).shouldDisable),
+      UiState.toggleOnReceive(() => sharedBackstage.providers.checkUiComponentContext(spec.context)),
+      Unselecting.config({ }),
+      ...(spec.tooltip.map((tooltip) => {
+        return Tooltipping.config(
+          {
+            ...sharedBackstage.providers.tooltips.getConfig({
+              tooltipText: sharedBackstage.providers.translate(tooltip),
+              onShow: (comp) => {
+                if (tooltipString.get() !== tooltip) {
+                  const translatedTooltip = sharedBackstage.providers.translate(tooltipString.get());
+                  Tooltipping.setComponents(comp,
+                    sharedBackstage.providers.tooltips.getComponents({ tooltipText: translatedTooltip })
+                  );
+                }
+              }
+            }),
+          }
+        );
+      }).toArray())
     ]),
 
     eventOrder: {
-      [SystemEvents.attachedToDom()]: [ 'alloy.base.behaviour', 'split-dropdown-events' ]
+      [SystemEvents.attachedToDom()]: [ 'alloy.base.behaviour', 'split-dropdown-events', 'tooltipping' ],
+      [SystemEvents.detachedFromDom()]: [ 'split-dropdown-events', 'tooltipping' ]
     },
 
     toggleClass: ToolbarButtonClasses.Ticked,
@@ -363,8 +415,10 @@ const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: Ui
     components: [
       AlloySplitDropdown.parts.button(
         renderCommonStructure(spec.icon, spec.text, Optional.none(), Optional.some([
-          Toggling.config({ toggleClass: ToolbarButtonClasses.Ticked, toggleOnExecute: false })
-        ]), sharedBackstage.providers)
+          Toggling.config({ toggleClass: ToolbarButtonClasses.Ticked, toggleOnExecute: false }),
+          DisablingConfigs.toolbarButton(Fun.never),
+          UiState.toggleOnReceive(Fun.constant({ contextType: 'any', shouldDisable: false }))
+        ]), sharedBackstage.providers, spec.context)
       ),
       AlloySplitDropdown.parts.arrow({
         dom: {
@@ -373,9 +427,8 @@ const renderSplitButton = (spec: Toolbar.ToolbarSplitButton, sharedBackstage: Ui
           innerHtml: Icons.get('chevron-down', sharedBackstage.providers.icons)
         },
         buttonBehaviours: Behaviour.derive([
-          DisablingConfigs.splitButton(sharedBackstage.providers.isDisabled),
-          ReadOnly.receivingConfig(),
-          Icons.addFocusableBehaviour()
+          DisablingConfigs.splitButton(Fun.never),
+          UiState.toggleOnReceive(Fun.constant({ contextType: 'any', shouldDisable: false }))
         ])
       }),
       AlloySplitDropdown.parts['aria-descriptor']({

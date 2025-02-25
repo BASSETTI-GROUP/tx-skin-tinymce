@@ -1,6 +1,7 @@
 import * as Boxes from '../alien/Boxes';
 import * as EventRoot from '../alien/EventRoot';
 import * as OffsetOrigin from '../alien/OffsetOrigin';
+import * as AriaDescribe from '../aria/AriaDescribe';
 import * as AriaVoice from '../aria/AriaVoice';
 import { BehaviourState } from '../behaviour/common/BehaviourState';
 import * as DockingTypes from '../behaviour/docking/DockingTypes';
@@ -34,6 +35,7 @@ import * as SliderTypes from '../ui/types/SliderTypes';
 import * as SlotContainerTypes from '../ui/types/SlotContainerTypes';
 import * as TabbarTypes from '../ui/types/TabbarTypes';
 import * as TieredMenuTypes from '../ui/types/TieredMenuTypes';
+import * as TooltippingTypes from './../behaviour/tooltipping/TooltippingTypes';
 import * as AddEventsBehaviour from './behaviour/AddEventsBehaviour';
 import { AllowBubbling } from './behaviour/AllowBubbling';
 import * as Behaviour from './behaviour/Behaviour';
@@ -130,6 +132,7 @@ type Bounds = Boxes.Bounds;
 // Type Def Exports
 export {
   AriaVoice,
+  AriaDescribe,
   AddEventsBehaviour,
   Behaviour,
   AllowBubbling,
@@ -275,7 +278,7 @@ export {
   DraggingTypes,
   DockingTypes,
   Layouts,
-
+  TooltippingTypes,
   FocusInsideModes,
 
   TestHelpers

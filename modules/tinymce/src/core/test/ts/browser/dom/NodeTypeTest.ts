@@ -1,25 +1,55 @@
 import { describe, it } from '@ephox/bedrock-client';
-import { SugarElement } from '@ephox/sugar';
+import { Insert, Remove, SelectorFind, SugarBody, SugarElement } from '@ephox/sugar';
 import { assert } from 'chai';
 
 import * as NodeType from 'tinymce/core/dom/NodeType';
 
 describe('browser.tinymce.core.dom.NodeTypeTest', () => {
-  it('isText/isElement/isComment', () => {
+  const createSvgElement = (name: string) => document.createElementNS('http://www.w3.org/2000/svg', name);
+
+  it('isText', () => {
     assert.isTrue(NodeType.isText(document.createTextNode('x')));
     assert.isFalse(NodeType.isText(null));
     assert.isFalse(NodeType.isText(document.createElement('div')));
     assert.isFalse(NodeType.isText(document.createComment('x')));
+    assert.isFalse(NodeType.isText(createSvgElement('svg')));
+    assert.isFalse(NodeType.isText(createSvgElement('g')));
+  });
 
+  it('isElement', () => {
     assert.isTrue(NodeType.isElement(document.createElement('div')));
+    assert.isTrue(NodeType.isElement(createSvgElement('svg')));
+    assert.isTrue(NodeType.isElement(createSvgElement('g')));
     assert.isFalse(NodeType.isElement(null));
     assert.isFalse(NodeType.isElement(document.createTextNode('x')));
     assert.isFalse(NodeType.isElement(document.createComment('x')));
+  });
 
+  it('isHTMLElement', () => {
+    assert.isTrue(NodeType.isHTMLElement(document.createElement('div')));
+    assert.isFalse(NodeType.isHTMLElement(null));
+    assert.isFalse(NodeType.isHTMLElement(document.createTextNode('x')));
+    assert.isFalse(NodeType.isHTMLElement(document.createComment('x')));
+    assert.isFalse(NodeType.isHTMLElement(createSvgElement('svg')));
+    assert.isFalse(NodeType.isHTMLElement(createSvgElement('g')));
+  });
+
+  it('isComment', () => {
     assert.isTrue(NodeType.isComment(document.createComment('x')));
     assert.isFalse(NodeType.isComment(null));
     assert.isFalse(NodeType.isComment(document.createTextNode('x')));
     assert.isFalse(NodeType.isComment(document.createElement('div')));
+    assert.isFalse(NodeType.isComment(createSvgElement('svg')));
+    assert.isFalse(NodeType.isComment(createSvgElement('g')));
+  });
+
+  it('isSVGElement', () => {
+    assert.isFalse(NodeType.isSVGElement(document.createComment('x')));
+    assert.isFalse(NodeType.isSVGElement(null));
+    assert.isFalse(NodeType.isSVGElement(document.createTextNode('x')));
+    assert.isFalse(NodeType.isSVGElement(document.createElement('div')));
+    assert.isTrue(NodeType.isSVGElement(createSvgElement('svg')));
+    assert.isTrue(NodeType.isSVGElement(createSvgElement('g')));
   });
 
   it('isBr', () => {
@@ -63,15 +93,6 @@ describe('browser.tinymce.core.dom.NodeTypeTest', () => {
     assert.isFalse(matchNodeNames(document.createElement('b')));
   });
 
-  it('hasPropValue', () => {
-    const hasTabIndex3 = NodeType.hasPropValue('tabIndex', 3);
-
-    assert.isFalse(hasTabIndex3(null));
-    assert.isTrue(hasTabIndex3(SugarElement.fromHtml('<div tabIndex="3"></div>').dom));
-    assert.isFalse(hasTabIndex3(document.createElement('div')));
-    assert.isFalse(hasTabIndex3(document.createElement('b')));
-  });
-
   it('isBogus', () => {
     assert.isTrue(NodeType.isBogus(SugarElement.fromHtml('<div data-mce-bogus="1"></div>').dom));
     assert.isTrue(NodeType.isBogus(SugarElement.fromHtml('<div data-mce-bogus="all"></div>').dom));
@@ -98,5 +119,17 @@ describe('browser.tinymce.core.dom.NodeTypeTest', () => {
     assert.isFalse(NodeType.isTable(SugarElement.fromHtml('<div></div>').dom));
     assert.isFalse(NodeType.isTable(document.createTextNode('test')));
     assert.isFalse(NodeType.isTable(null));
+  });
+
+  it('isEditingHost', () => {
+    const div = SugarElement.fromHtml('<div contenteditable="false"><span contenteditable="true"><b></b></span></div>');
+
+    Insert.append(SugarBody.body(), div);
+
+    assert.isTrue(NodeType.isEditingHost(SelectorFind.descendant(div, 'span').getOrDie().dom), 'Inner span be editable host');
+    assert.isFalse(NodeType.isEditingHost(SelectorFind.descendant(div, 'b').getOrDie().dom), 'Inner b be not a editable host');
+    assert.isFalse(NodeType.isEditingHost(div.dom), 'Non-editable div be not a editable host');
+
+    Remove.remove(div);
   });
 });

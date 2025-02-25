@@ -227,12 +227,20 @@ const getBehaviours = (editor: Editor, sharedBackstage: UiFactoryBackstageShared
                   ScrollingContext.getBoundsFrom(scrollEnv)
                 );
 
+                // When the toolbar location is set to the top, y is the top of the container and height is the available container height minus the header height, as the toolbar will be placed at the top of the container
+                // This is so that as you scroll the scrollable container/the page, it will dock at the top and when there's insufficient height/space (that's the reason of deducting the headerHeight for the available height), it will be hidden.
+                // When the toolbar location is set to the bottom, y is the top of the container plus the header height, as the toolbar will be placed at the bottom of the container, beyond the container, so that's why we need to add the headerHeight
+                // When there's insufficient height/space, it will be hidden, and when you scroll past the editor, it will be hidden
+                const constrainedBoundsY = isDockedMode(comp, 'top')
+                  ? constrainedBounds.y
+                  : constrainedBounds.y + headerHeight;
+
                 return Boxes.bounds(
                   constrainedBounds.x,
                   // ASSUMPTION: The constrainedBounds removes the need for us to set this to 0px
                   // for docked mode. Also, docking in a scrolling environment will often be
                   // at the scroller top, not the window top
-                  constrainedBounds.y,
+                  constrainedBoundsY,
                   constrainedBounds.width,
                   constrainedBounds.height - headerHeight
                 );
@@ -266,7 +274,7 @@ const getBehaviours = (editor: Editor, sharedBackstage: UiFactoryBackstageShared
           () => {
             const boundsWithoutOffset = Boxes.win();
             const offset = Options.getStickyToolbarOffset(editor);
-            const top = boundsWithoutOffset.y + (isDockedMode(comp, 'top') ? offset : 0);
+            const top = boundsWithoutOffset.y + (isDockedMode(comp, 'top') && !ScrollingContext.isFullscreen(editor) ? offset : 0);
             const height = boundsWithoutOffset.height - (isDockedMode(comp, 'bottom') ? offset : 0);
             // No scrolling context, so just window
             return {

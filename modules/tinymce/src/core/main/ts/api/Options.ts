@@ -5,6 +5,7 @@ import * as Pattern from '../textpatterns/core/Pattern';
 import * as PatternTypes from '../textpatterns/core/PatternTypes';
 import DOMUtils from './dom/DOMUtils';
 import Editor from './Editor';
+import { fireDisabledStateChange } from './Events';
 import { EditorOptions } from './OptionTypes';
 import I18n from './util/I18n';
 import Tools from './util/Tools';
@@ -260,13 +261,13 @@ const register = (editor: Editor): void => {
   registerOption('indent_before', {
     processor: 'string',
     default: 'p,h1,h2,h3,h4,h5,h6,blockquote,div,title,style,pre,script,td,th,ul,ol,li,dl,dt,dd,area,table,thead,' +
-      'tfoot,tbody,tr,section,summary,article,hgroup,aside,figure,figcaption,option,optgroup,datalist'
+      'tfoot,tbody,tr,section,details,summary,article,hgroup,aside,figure,figcaption,option,optgroup,datalist'
   });
 
   registerOption('indent_after', {
     processor: 'string',
     default: 'p,h1,h2,h3,h4,h5,h6,blockquote,div,title,style,pre,script,td,th,ul,ol,li,dl,dt,dd,area,table,thead,' +
-      'tfoot,tbody,tr,section,summary,article,hgroup,aside,figure,figcaption,option,optgroup,datalist'
+      'tfoot,tbody,tr,section,details,summary,article,hgroup,aside,figure,figcaption,option,optgroup,datalist'
   });
 
   registerOption('indent_use_margin', {
@@ -356,7 +357,7 @@ const register = (editor: Editor): void => {
   });
 
   registerOption('event_root', {
-    processor: 'object'
+    processor: 'string'
   });
 
   registerOption('service_message', {
@@ -437,9 +438,33 @@ const register = (editor: Editor): void => {
     default: false
   });
 
+  registerOption('disabled', {
+    processor: (value) => {
+      if (Type.isBoolean(value)) {
+        if (editor.initialized && isDisabled(editor) !== value) {
+          // Schedules the callback to run in the next microtask queue once the option is updated
+          // TODO: TINY-11586 - Implement `onChange` callback when the value of an option changes
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          Promise.resolve().then(() => {
+            fireDisabledStateChange(editor, value);
+          });
+        }
+        return { valid: true, value };
+      }
+
+      return { valid: false, message: 'The value must be a boolean.' };
+    },
+    default: false
+  });
+
   registerOption('readonly', {
     processor: 'boolean',
     default: false
+  });
+
+  registerOption('editable_root', {
+    processor: 'boolean',
+    default: true
   });
 
   registerOption('plugins', {
@@ -486,7 +511,7 @@ const register = (editor: Editor): void => {
 
   registerOption('iframe_aria_text', {
     processor: 'string',
-    default: 'Rich Text Area. Press ALT-0 for help.'
+    default: 'Rich Text Area'.concat(editor.hasPlugin('help') ? '. Press ALT-0 for help.' : '')
   });
 
   registerOption('setup', {
@@ -542,6 +567,14 @@ const register = (editor: Editor): void => {
     default: false
   });
 
+  registerOption('allow_mathml_annotation_encodings', {
+    processor: (value) => {
+      const valid = Type.isArrayOf(value, Type.isString);
+      return valid ? { value, valid } : { valid: false, message: 'Must be an array of strings.' };
+    },
+    default: []
+  });
+
   registerOption('convert_fonts_to_spans', {
     processor: 'boolean',
     default: true,
@@ -559,7 +592,13 @@ const register = (editor: Editor): void => {
   });
 
   registerOption('remove_trailing_brs', {
-    processor: 'boolean'
+    processor: 'boolean',
+    default: true
+  });
+
+  registerOption('pad_empty_with_br', {
+    processor: 'boolean',
+    default: false,
   });
 
   registerOption('inline_styles', {
@@ -598,7 +637,7 @@ const register = (editor: Editor): void => {
   });
 
   registerOption('custom_elements', {
-    processor: 'string'
+    processor: stringOrObjectProcessor
   });
 
   registerOption('extended_valid_elements', {
@@ -666,6 +705,10 @@ const register = (editor: Editor): void => {
     processor: 'string'
   });
 
+  registerOption('license_key', {
+    processor: 'string'
+  });
+
   registerOption('paste_block_drop', {
     processor: 'boolean',
     default: false
@@ -726,15 +769,17 @@ const register = (editor: Editor): void => {
     default: [
       { start: '*', end: '*', format: 'italic' },
       { start: '**', end: '**', format: 'bold' },
-      { start: '#', format: 'h1' },
-      { start: '##', format: 'h2' },
-      { start: '###', format: 'h3' },
-      { start: '####', format: 'h4' },
-      { start: '#####', format: 'h5' },
-      { start: '######', format: 'h6' },
-      { start: '1. ', cmd: 'InsertOrderedList' },
-      { start: '* ', cmd: 'InsertUnorderedList' },
-      { start: '- ', cmd: 'InsertUnorderedList' }
+      { start: '#', format: 'h1', trigger: 'space' },
+      { start: '##', format: 'h2', trigger: 'space' },
+      { start: '###', format: 'h3', trigger: 'space' },
+      { start: '####', format: 'h4', trigger: 'space' },
+      { start: '#####', format: 'h5', trigger: 'space' },
+      { start: '######', format: 'h6', trigger: 'space' },
+      { start: '1.', cmd: 'InsertOrderedList', trigger: 'space' },
+      { start: '*', cmd: 'InsertUnorderedList', trigger: 'space' },
+      { start: '-', cmd: 'InsertUnorderedList', trigger: 'space' },
+      { start: '>', cmd: 'mceBlockQuote', trigger: 'space' },
+      { start: '---', cmd: 'InsertHorizontalRule', trigger: 'space' },
     ]
   });
 
@@ -782,10 +827,62 @@ const register = (editor: Editor): void => {
 
   registerOption('highlight_on_focus', {
     processor: 'boolean',
-    default: false
+    default: true
   });
 
   registerOption('xss_sanitization', {
+    processor: 'boolean',
+    default: true
+  });
+
+  registerOption('details_initial_state', {
+    processor: (value) => {
+      const valid = Arr.contains([ 'inherited', 'collapsed', 'expanded' ], value);
+      return valid ? { value, valid } : { valid: false, message: 'Must be one of: inherited, collapsed, or expanded.' };
+    },
+    default: 'inherited'
+  });
+
+  registerOption('details_serialized_state', {
+    processor: (value) => {
+      const valid = Arr.contains([ 'inherited', 'collapsed', 'expanded' ], value);
+      return valid ? { value, valid } : { valid: false, message: 'Must be one of: inherited, collapsed, or expanded.' };
+    },
+    default: 'inherited'
+  });
+
+  registerOption('init_content_sync', {
+    processor: 'boolean',
+    default: false
+  });
+
+  registerOption('newdocument_content', {
+    processor: 'string',
+    default: ''
+  });
+
+  registerOption('sandbox_iframes', {
+    processor: 'boolean',
+    default: true
+  });
+
+  registerOption('sandbox_iframes_exclusions', {
+    processor: 'string[]',
+    default: [
+      'youtube.com',
+      'youtu.be',
+      'vimeo.com',
+      'player.vimeo.com',
+      'dailymotion.com',
+      'embed.music.apple.com',
+      'open.spotify.com',
+      'giphy.com',
+      'dai.ly',
+      'codepen.io',
+    ]
+  });
+
+  registerOption('convert_unsafe_embeds', {
     processor: 'boolean',
     default: true
   });
@@ -862,6 +959,7 @@ const shouldAddUnloadTrigger = option('add_unload_trigger');
 const getCustomUndoRedoLevels = option('custom_undo_redo_levels');
 const shouldDisableNodeChange = option('disable_nodechange');
 const isReadOnly = option('readonly');
+const hasEditableRoot = option('editable_root');
 const hasContentCssCors = option('content_css_cors');
 const getPlugins = option('plugins');
 const getExternalPlugins = option('external_plugins');
@@ -880,6 +978,7 @@ const shouldPasteBlockDrop = option('paste_block_drop');
 const shouldPasteDataImages = option('paste_data_images');
 const getPastePreProcess = option('paste_preprocess');
 const getPastePostProcess = option('paste_postprocess');
+const getNewDocumentContent = option('newdocument_content');
 const getPasteWebkitStyles = option('paste_webkit_styles');
 const shouldPasteRemoveWebKitStyles = option('paste_remove_styles_if_webkit');
 const shouldPasteMergeFormats = option('paste_merge_formats');
@@ -895,23 +994,21 @@ const getNonEditableRegExps = option('noneditable_regexp');
 const shouldPreserveCData = option('preserve_cdata');
 const shouldHighlightOnFocus = option('highlight_on_focus');
 const shouldSanitizeXss = option('xss_sanitization');
-
-const hasTextPatternsLookup = (editor: Editor): boolean =>
-  editor.options.isSet('text_patterns_lookup');
-
-const getFontStyleValues = (editor: Editor): string[] =>
-  Tools.explode(editor.options.get('font_size_style_values'));
-
-const getFontSizeClasses = (editor: Editor): string[] =>
-  Tools.explode(editor.options.get('font_size_classes'));
-
-const isEncodingXml = (editor: Editor): boolean =>
-  editor.options.get('encoding') === 'xml';
-
-const getAllowedImageFileTypes = (editor: Editor): string[] =>
-  Tools.explode(editor.options.get('images_file_types'));
-
+const shouldUseDocumentWrite = option('init_content_sync');
+const hasTextPatternsLookup = (editor: Editor): boolean => editor.options.isSet('text_patterns_lookup');
+const getFontStyleValues = (editor: Editor): string[] => Tools.explode(editor.options.get('font_size_style_values'));
+const getFontSizeClasses = (editor: Editor): string[] => Tools.explode(editor.options.get('font_size_classes'));
+const isEncodingXml = (editor: Editor): boolean => editor.options.get('encoding') === 'xml';
+const getAllowedImageFileTypes = (editor: Editor): string[] => Tools.explode(editor.options.get('images_file_types'));
 const hasTableTabNavigation = option('table_tab_navigation');
+const getDetailsInitialState = option('details_initial_state');
+const getDetailsSerializedState = option('details_serialized_state');
+const shouldSandboxIframes = option('sandbox_iframes');
+const getSandboxIframesExclusions = (editor: Editor): string[] => editor.options.get('sandbox_iframes_exclusions');
+const shouldConvertUnsafeEmbeds = option('convert_unsafe_embeds');
+const getLicenseKey = option('license_key');
+const getApiKey = option('api_key');
+const isDisabled = option('disabled');
 
 export {
   register,
@@ -975,6 +1072,7 @@ export {
   getCustomUndoRedoLevels,
   shouldDisableNodeChange,
   isReadOnly,
+  hasEditableRoot,
   hasContentCssCors,
   getPlugins,
   getExternalPlugins,
@@ -994,6 +1092,7 @@ export {
   shouldPasteDataImages,
   getPastePreProcess,
   getPastePostProcess,
+  getNewDocumentContent,
   getPasteWebkitStyles,
   shouldPasteRemoveWebKitStyles,
   shouldPasteMergeFormats,
@@ -1011,5 +1110,14 @@ export {
   hasTableTabNavigation,
   shouldPreserveCData,
   shouldHighlightOnFocus,
-  shouldSanitizeXss
+  shouldSanitizeXss,
+  getDetailsInitialState,
+  getDetailsSerializedState,
+  shouldUseDocumentWrite,
+  shouldSandboxIframes,
+  getLicenseKey,
+  getSandboxIframesExclusions,
+  shouldConvertUnsafeEmbeds,
+  getApiKey,
+  isDisabled
 };

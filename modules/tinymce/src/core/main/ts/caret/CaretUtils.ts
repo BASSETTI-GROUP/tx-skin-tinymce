@@ -12,14 +12,14 @@ import { isFakeCaretTarget } from './FakeCaret';
 const isContentEditableTrue = NodeType.isContentEditableTrue;
 const isContentEditableFalse = NodeType.isContentEditableFalse;
 const isMedia = NodeType.isMedia;
-const isBlockLike = NodeType.matchStyleValues('display', 'block table table-cell table-caption list-item');
+const isBlockLike = NodeType.matchStyleValues('display', 'block table table-cell table-row table-caption list-item');
 const isCaretContainer = CaretContainer.isCaretContainer;
 const isCaretContainerBlock = CaretContainer.isCaretContainerBlock;
 const isElement = NodeType.isElement;
 const isText = NodeType.isText;
 const isCaretCandidate = CaretCandidate.isCaretCandidate;
-const isForwards = (direction: HDirection): boolean => direction > 0;
-const isBackwards = (direction: HDirection): boolean => direction < 0;
+const isForwards = (direction: HDirection): boolean => direction === HDirection.Forwards;
+const isBackwards = (direction: HDirection): boolean => direction === HDirection.Backwards;
 
 const skipCaretContainers = (walk: (shallow?: boolean) => Node | null | undefined, shallow?: boolean): Node | null => {
   let node: Node | null | undefined;

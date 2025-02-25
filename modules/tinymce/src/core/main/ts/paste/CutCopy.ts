@@ -22,7 +22,7 @@ const setHtml5Clipboard = (clipboardData: DataTransfer | null, html: string, tex
       clipboardData.setData('text/plain', text);
       clipboardData.setData(InternalHtml.internalHtmlMime(), html);
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   } else {
@@ -80,7 +80,7 @@ const hasSelectedContent = (editor: Editor): boolean =>
   !editor.selection.isCollapsed() || isTableSelection(editor);
 
 const cut = (editor: Editor) => (evt: EditorEvent<ClipboardEvent>): void => {
-  if (!evt.isDefaultPrevented() && hasSelectedContent(editor)) {
+  if (!evt.isDefaultPrevented() && hasSelectedContent(editor) && editor.selection.isEditable()) {
     setClipboardData(evt, getData(editor), fallback(editor), () => {
       if (Env.browser.isChromium() || Env.browser.isFirefox()) {
         const rng = editor.selection.getRng();

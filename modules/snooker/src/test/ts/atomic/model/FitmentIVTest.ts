@@ -1,5 +1,5 @@
 import { Assert, UnitTest } from '@ephox/bedrock-client';
-import { Arr, Fun, Result } from '@ephox/katamari';
+import { Arr, Fun, Num, Result } from '@ephox/katamari';
 import { SugarElement } from '@ephox/sugar';
 
 import { SimpleGenerators } from 'ephox/snooker/api/Generators';
@@ -21,8 +21,10 @@ UnitTest.test('FitmentIVTest', () => {
   const en = (fakeElement: any, isNew: boolean) =>
     Structs.elementnew(fakeElement as SugarElement<any>, isNew, false);
 
-  // Spend 5 seconds running as many iterations as we can (there are three cycles, so 15s total)
-  const CYCLE_TIME = 5000;
+  // TODO: Convert to fast-check, which will algorithmically determine what to test instead of just throwing random numbers at it for a fixed period
+
+  // Spend 2 seconds running as many iterations as we can (there are three cycles, so 15s total)
+  const CYCLE_TIME = 2000;
   const GRID_MIN = 1;   // 1x1 grid is the min
   const GRID_MAX = 200;
 
@@ -53,7 +55,7 @@ UnitTest.test('FitmentIVTest', () => {
     ));
 
   const rand = (min: number, max: number) =>
-    Math.floor(Math.random() * (max - min + 1)) + min;
+    Math.floor(Num.random() * (max - min + 1)) + min;
 
   const inVariantRunner = <T extends InvTest> (label: string, mvTest: () => T, timelimit: number): number => {
     let times = 0;

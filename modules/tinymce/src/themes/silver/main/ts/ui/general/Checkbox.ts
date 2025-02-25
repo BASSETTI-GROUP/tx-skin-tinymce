@@ -4,12 +4,12 @@ import {
 } from '@ephox/alloy';
 import { Dialog } from '@ephox/bridge';
 import { Fun, Optional } from '@ephox/katamari';
-import { Checked } from '@ephox/sugar';
+import { Checked, Class, Traverse } from '@ephox/sugar';
 
 import { UiFactoryBackstageProviders } from '../../backstage/Backstage';
-import * as ReadOnly from '../../ReadOnly';
+import * as UiState from '../../UiState';
 import { ComposingConfigs } from '../alien/ComposingConfigs';
-import { RepresentingConfigs } from '../alien/RepresentingConfigs';
+import * as RepresentingConfigs from '../alien/RepresentingConfigs';
 import * as Icons from '../icons/Icons';
 import { formChangeEvent } from './FormEvents';
 
@@ -34,7 +34,13 @@ export const renderCheckbox = (spec: CheckboxSpec, providerBackstage: UiFactoryB
     behaviours: Behaviour.derive([
       ComposingConfigs.self(),
       Disabling.config({
-        disabled: () => !spec.enabled || providerBackstage.isDisabled()
+        disabled: () => !spec.enabled || providerBackstage.checkUiComponentContext(spec.context).shouldDisable,
+        onDisabled: (component) => {
+          Traverse.parentElement(component.element).each((element) => Class.add(element, 'tox-checkbox--disabled'));
+        },
+        onEnabled: (component) => {
+          Traverse.parentElement(component.element).each((element) => Class.remove(element, 'tox-checkbox--disabled'));
+        }
       }),
       Tabstopping.config({}),
       Focusing.config({ }),
@@ -96,16 +102,9 @@ export const renderCheckbox = (spec: CheckboxSpec, providerBackstage: UiFactoryB
     ],
     fieldBehaviours: Behaviour.derive([
       Disabling.config({
-        disabled: () => !spec.enabled || providerBackstage.isDisabled(),
-        disableClass: 'tox-checkbox--disabled',
-        onDisabled: (comp) => {
-          AlloyFormField.getField(comp).each(Disabling.disable);
-        },
-        onEnabled: (comp) => {
-          AlloyFormField.getField(comp).each(Disabling.enable);
-        }
+        disabled: () => !spec.enabled || providerBackstage.checkUiComponentContext(spec.context).shouldDisable,
       }),
-      ReadOnly.receivingConfig()
+      UiState.toggleOnReceive(() => providerBackstage.checkUiComponentContext(spec.context))
     ])
   });
 };

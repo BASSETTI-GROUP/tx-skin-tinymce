@@ -1,8 +1,14 @@
 // eslint-disable-next-line max-len
 import {
-  AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloySpec, Behaviour, Boxes, Focusing, Keying, SketchSpec,
+  AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloySpec,
   SplitFloatingToolbar as AlloySplitFloatingToolbar,
-  SplitSlidingToolbar as AlloySplitSlidingToolbar, Tabstopping, Toolbar as AlloyToolbar, ToolbarGroup as AlloyToolbarGroup
+  SplitSlidingToolbar as AlloySplitSlidingToolbar,
+  Toolbar as AlloyToolbar, ToolbarGroup as AlloyToolbarGroup,
+  Behaviour, Boxes,
+  Focusing,
+  GuiFactory,
+  Keying, SketchSpec,
+  Tabstopping
 } from '@ephox/alloy';
 import { Arr, Optional, Result } from '@ephox/katamari';
 import { Traverse } from '@ephox/sugar';
@@ -10,7 +16,7 @@ import { Traverse } from '@ephox/sugar';
 import { ToolbarMode } from '../../api/Options';
 import { UiFactoryBackstageProviders } from '../../backstage/Backstage';
 import * as Channels from '../../Channels';
-import * as ReadOnly from '../../ReadOnly';
+import * as UiState from '../../UiState';
 import { DisablingConfigs } from '../alien/DisablingConfigs';
 import { renderIconButtonSpec } from '../general/Button';
 import { ToolbarButtonClasses } from './button/ButtonClasses';
@@ -39,20 +45,40 @@ export interface MoreDrawerToolbarSpec extends ToolbarSpec {
 
 export interface ToolbarGroup {
   readonly title: Optional<string>;
+  readonly label: Optional<string>;
   readonly items: AlloySpec[];
 }
 
 const renderToolbarGroupCommon = (toolbarGroup: ToolbarGroup) => {
-  const attributes = toolbarGroup.title.fold(() => ({}),
-    (title) => ({ attributes: { title }}));
+  const attributes = toolbarGroup.label.isNone() ?
+    toolbarGroup.title.fold(
+      () => ({}),
+      (title) => ({ attributes: { 'aria-label': title }})
+    )
+    : toolbarGroup.label.fold(
+      () => ({}),
+      (label) => ({ attributes: { 'aria-label': label }})
+    );
+
   return {
     dom: {
       tag: 'div',
-      classes: [ 'tox-toolbar__group' ],
+      classes: [ 'tox-toolbar__group' ].concat(
+        toolbarGroup.label.isSome() ? [ 'tox-toolbar__group_with_label' ] : []
+      ),
       ...attributes
     },
 
     components: [
+      ...(toolbarGroup.label.map((label) => {
+        return {
+          dom: {
+            tag: 'span',
+            classes: [ 'tox-label', 'tox-label--context-toolbar' ],
+          },
+          components: [ GuiFactory.text(label) ]
+        };
+      }).toArray()),
       AlloyToolbarGroup.parts.items({})
     ],
 
@@ -61,12 +87,14 @@ const renderToolbarGroupCommon = (toolbarGroup: ToolbarGroup) => {
       // nav within a group breaks if disabled buttons are first in their group so skip them
       itemSelector: '*:not(.tox-split-button) > .tox-tbtn:not([disabled]), ' +
                     '.tox-split-button:not([disabled]), ' +
-                    '.tox-toolbar-nav-js:not([disabled]), ' +
+                    '.tox-toolbar-nav-item:not([disabled]), ' +
                     '.tox-number-input:not([disabled])'
     },
     tgroupBehaviours: Behaviour.derive([
       Tabstopping.config({}),
-      Focusing.config({})
+      Focusing.config({
+        ignore: true
+      })
     ])
   };
 };
@@ -81,12 +109,13 @@ const getToolbarBehaviours = (toolbarSpec: ToolbarSpec, modeName: 'cyclic' | 'ac
   });
 
   return Behaviour.derive([
-    DisablingConfigs.toolbarButton(toolbarSpec.providers.isDisabled),
-    ReadOnly.receivingConfig(),
+    DisablingConfigs.toolbarButton(() => toolbarSpec.providers.checkUiComponentContext('any').shouldDisable),
+    UiState.toggleOnReceive(() => toolbarSpec.providers.checkUiComponentContext('any')),
     Keying.config({
       // Tabs between groups
       mode: modeName,
       onEscape: toolbarSpec.onEscape,
+      visibilitySelector: '.tox-toolbar__overflow',
       selector: '.tox-toolbar__group'
     }),
     AddEventsBehaviour.config('toolbar-events', [ onAttached ])
@@ -106,17 +135,19 @@ const renderMoreToolbarCommon = (toolbarSpec: MoreDrawerToolbarSpec) => {
       // This already knows it is a toolbar group
       'overflow-group': renderToolbarGroupCommon({
         title: Optional.none(),
+        label: Optional.none(),
         items: []
       }),
       'overflow-button': renderIconButtonSpec({
+        context: 'any',
         name: 'more',
         icon: Optional.some('more-drawer'),
         enabled: true,
-        tooltip: Optional.some('More...'),
+        tooltip: Optional.some('Reveal or hide additional toolbar items'),
         primary: false,
         buttonType: Optional.none(),
         borderless: false
-      }, Optional.none(), toolbarSpec.providers)
+      }, Optional.none(), toolbarSpec.providers, [], 'overflow-button')
     },
     splitToolbarBehaviours: getToolbarBehaviours(toolbarSpec, modeName)
   };
@@ -228,4 +259,5 @@ const renderToolbar = (toolbarSpec: ToolbarSpec): SketchSpec => {
   });
 };
 
-export { renderToolbarGroup, renderToolbar, renderFloatingMoreToolbar, renderSlidingMoreToolbar };
+export { renderFloatingMoreToolbar, renderSlidingMoreToolbar, renderToolbar, renderToolbarGroup };
+

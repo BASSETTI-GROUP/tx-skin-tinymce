@@ -1,5 +1,5 @@
-import { Boxes } from '@ephox/alloy';
-import { Fun } from '@ephox/katamari';
+import { AlloyComponent, Boxes } from '@ephox/alloy';
+import { Fun, Singleton } from '@ephox/katamari';
 
 import Editor from 'tinymce/core/api/Editor';
 import ThemeManager, { RenderResult, Theme } from 'tinymce/core/api/ThemeManager';
@@ -40,8 +40,9 @@ export default (): void => {
 
     // We wrap the `renderModeUI` function being returned by Render so that we can update
     // the getPopupSinkBounds mutable variable if required.
-    const renderUI = async (): Promise<RenderResult> => {
-      const renderResult = await renderModeUI();
+    // DON'T define this function as `async`; otherwise, it will slow down the rendering process and cause flickering if the editor is repeatedly removed and re-initialized.
+    const renderUI = (): RenderResult => {
+      const renderResult = renderModeUI();
 
       const optScrollingContext = ScrollingContext.detectWhenSplitUiMode(
         editor,
@@ -71,11 +72,13 @@ export default (): void => {
       }
     });
 
+    const notificationRegion = Singleton.value<AlloyComponent>();
     // The NotificationManager uses the popup mothership (and sink)
     const getNotificationManagerImpl = () => NotificationManagerImpl(
       editor,
       { backstage: popups.backstage },
-      popups.getMothership()
+      popups.getMothership(),
+      notificationRegion
     );
 
     return {

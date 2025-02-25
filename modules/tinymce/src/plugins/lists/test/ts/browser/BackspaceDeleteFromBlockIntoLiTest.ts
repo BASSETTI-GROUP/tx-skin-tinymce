@@ -5,7 +5,7 @@ import { TinyAssertions, TinyContentActions, TinyHooks, TinySelections } from '@
 import Editor from 'tinymce/core/api/Editor';
 import Plugin from 'tinymce/plugins/lists/Plugin';
 
-describe('Browser Test: .RemoveTrailingBlockquoteTest', () => {
+describe('browser.tinymce.plugins.lists.BackspaceDeleteFromBlockIntoLiTest', () => {
   const hook = TinyHooks.bddSetupLight<Editor>({
     indent: false,
     plugins: 'lists',
@@ -125,5 +125,101 @@ describe('Browser Test: .RemoveTrailingBlockquoteTest', () => {
     TinySelections.setCursor(editor, [ 1, 0 ], 0);
     TinyContentActions.keystroke(editor, Keys.backspace());
     TinyAssertions.assertContent(editor, '<ul><li>a</li></ul>');
+  });
+
+  it('TINY-6888: delete a `li` with a `br` and a `br` with `data-mce-bogus', () => {
+    const editor = hook.editor();
+    editor.setContent('<ol><li>aaa</li><li><br><br data-mce-bogus="1"></li><li>ccc</li></ol>', { format: 'raw' });
+    TinySelections.setCursor(editor, [ 0, 1 ], 0);
+    TinyContentActions.keystroke(editor, Keys.delete());
+    TinyAssertions.assertContent(editor, '<ol><li>aaa</li><li>ccc</li></ol>');
+
+    editor.setContent('<ol><li>aaa</li><li>foo<br><br></li><li>ccc</li></ol>', { format: 'raw' });
+    TinySelections.setSelection(editor, [ 0, 1 ], 0, [ 0, 2 ], 0);
+    TinyContentActions.keystroke(editor, Keys.delete());
+    TinyAssertions.assertContent(editor, '<ol><li>aaa</li><li>ccc</li></ol>');
+
+    editor.setContent('<ol><li>aaa</li><li>foo<br><br><br></li><li>ccc</li></ol>', { format: 'raw' });
+    TinySelections.setSelection(editor, [ 0, 1 ], 0, [ 0, 2 ], 0);
+    TinyContentActions.keystroke(editor, Keys.delete());
+    TinyAssertions.assertContent(editor, '<ol><li>aaa</li><li>ccc</li></ol>');
+  });
+
+  it('TINY-11763: backspace from empty div into same li', () => {
+    const editor = hook.editor();
+    editor.setContent('<ul>' +
+        '<li>' +
+          '<div>' +
+            '<strong>One</strong>' +
+            '<div><br></div>' +
+          '</div>' +
+          '<div><strong>Two</strong></div>' +
+        '</li>' +
+      '</ul>');
+    TinySelections.setCursor(editor, [ 0, 0, 0, 1 ], 0);
+    TinyContentActions.keystroke(editor, Keys.backspace());
+
+    TinyAssertions.assertContent(editor, '<ul>' +
+      '<li>' +
+        '<div>' +
+          '<strong>One</strong>' +
+        '</div>' +
+        '<div><strong>Two</strong></div>' +
+      '</li>' +
+    '</ul>');
+    TinyAssertions.assertCursor(editor, [ 0, 0, 0, 0, 0 ], 'One'.length);
+  });
+
+  it('TINY-11763: delete from empty div into same li', () => {
+    const editor = hook.editor();
+    editor.setContent('<ul>' +
+        '<li>' +
+          '<div>' +
+            '<strong>One</strong>' +
+            '<div><br></div>' +
+          '</div>' +
+          '<div><strong>Two</strong></div>' +
+        '</li>' +
+      '</ul>');
+    TinySelections.setCursor(editor, [ 0, 0, 0, 1 ], 0);
+    TinyContentActions.keystroke(editor, Keys.delete());
+
+    TinyAssertions.assertContent(editor, '<ul>' +
+      '<li>' +
+        '<div>' +
+          '<strong>One</strong>' +
+        '</div>' +
+        '<div><strong>Two</strong></div>' +
+      '</li>' +
+    '</ul>');
+    TinyAssertions.assertCursor(editor, [ 0, 0, 1, 0, 0 ], 0);
+  });
+
+  it('TINY-11763: backspace from empty div into nested li', () => {
+    const editor = hook.editor();
+    editor.setContent('<ul>' +
+      '<li>' +
+        '<div>' +
+          '<div><strong>One</strong></div>' +
+          '<ol><li>One</li></ol>' +
+          '<div><br></div>' +
+          '<ol><li>Two</li></ol>' +
+        '</div>' +
+      '</li>' +
+    '</ul>');
+    TinySelections.setCursor(editor, [ 0, 0, 0, 2 ], 0);
+    TinyContentActions.keystroke(editor, Keys.backspace());
+
+    TinyAssertions.assertContent(editor, '<ul>' +
+      '<li>' +
+        '<div>' +
+          '<div><strong>One</strong></div>' +
+          '<ol>' +
+            '<li>One</li>' +
+            '<li>Two</li>' +
+          '</ol>' +
+        '</div>' +
+      '</li>' +
+    '</ul>');
   });
 });

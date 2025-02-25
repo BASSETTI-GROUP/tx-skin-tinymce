@@ -13,6 +13,10 @@ import * as ViewBlock from '../../module/test/ViewBlock';
 describe('browser.tinymce.core.init.EditorInitializationTest', () => {
   const viewBlock = ViewBlock.bddSetup();
 
+  // these are global shared variables, and this test messes with them
+  const defaultBaseURL = EditorManager.baseURL;
+  const defaultSuffix = EditorManager.suffix;
+
   before(() => {
     EditorManager._setBaseUrl('/project/tinymce/js/tinymce');
 
@@ -25,6 +29,8 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
   });
 
   afterEach((done) => {
+    EditorManager._setBaseUrl(defaultBaseURL);
+    EditorManager.suffix = defaultSuffix;
     setTimeout(() => {
       EditorManager.remove();
       done();
@@ -34,6 +40,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
   it('target (initialised properly)', (done) => {
     const elm1 = viewBlock.get().querySelector('#elm-1') as HTMLElement;
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       target: elm1,
       init_instance_callback: (ed) => {
@@ -47,6 +54,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
     const elm = document.createElement('textarea');
     viewBlock.get().appendChild(elm);
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       target: elm,
       init_instance_callback: (ed) => {
@@ -61,6 +69,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
     const elm1 = document.getElementById('elm-1') as HTMLElement;
     const elm2 = document.getElementById('elm-2') as HTMLElement;
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       selector: '#elm-2',
       target: elm1,
@@ -85,6 +94,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
     let count = 0;
     const targets: HTMLElement[] = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       selector: '.elm-even',
       target: elm1,
@@ -102,9 +112,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
   });
 
   it('Test base_url and suffix options', (done) => {
-    const oldBaseURL = EditorManager.baseURL;
-    const oldSuffix = EditorManager.suffix;
-
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       base_url: '/compiled/fake/url',
       suffix: '.min',
@@ -118,11 +126,25 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
         assert.equal(EditorManager.baseURI.source, EditorManager.documentBaseURL + 'compiled/fake/url', 'Should have set baseURI on EditorManager');
         assert.equal(ed.baseURI.source, EditorManager.documentBaseURL + 'compiled/fake/url', 'Should have set baseURI on editor');
 
-        EditorManager._setBaseUrl(oldBaseURL);
-        EditorManager.suffix = oldSuffix;
         done();
       }
     });
+  });
+
+  it('suffix option is used by the skin', async () => {
+    viewBlock.update('<div class="tinymce-editor"><p>a</p></div>');
+    await EditorManager.init({
+      selector: '.tinymce-editor',
+      inline: true,
+      promotion: false,
+      toolbar_mode: 'wrap',
+      suffix: '.x'
+    });
+    assert.deepEqual(
+      getSkinCssFilenames(),
+      [ 'skin.x.css', 'content.inline.x.css' ],
+      'Should be two skin files, both using the suffix'
+    );
   });
 
   const getSkinCssFilenames = (): string[] => {
@@ -188,7 +210,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
 
     assert.deepEqual(
       getSkinCssFilenames(),
-      [ 'skin.min.css', 'content.inline.min.css' ],
+      [ 'skin.css', 'content.inline.css' ],
       'Should only be two skin files the skin and the content for inline mode'
     );
 
@@ -211,6 +233,7 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
   const initAndAssertContent = (html: string, selector: string, expectedEditorContent: string, done: () => void) => {
     viewBlock.update(html);
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     EditorManager.init({
       selector,
       init_instance_callback: (ed) => {
@@ -237,5 +260,9 @@ describe('browser.tinymce.core.init.EditorInitializationTest', () => {
 
   it('Initialize on list item with initial content', (done) => {
     initAndAssertContent('<ul><li>Initial Content</li></ul>', 'li', 'Initial Content', done);
+  });
+
+  it('TINY-10305: Should remove ZWNBSP from content when initializing', (done) => {
+    initAndAssertContent('<textarea>te\uFEFFst</textarea>', 'textarea', 'test', done);
   });
 });

@@ -5,7 +5,7 @@ import { Attribute, Css, Hierarchy, Html, Insert, Remove, SelectorFilter, SugarB
 
 import * as TableOperations from 'ephox/snooker/api/TableOperations';
 import { TableSection } from 'ephox/snooker/api/TableSection';
-import { TargetElement, TargetPaste, TargetPasteRows, TargetSelection, OperationCallback } from 'ephox/snooker/model/RunOperation';
+import { OperationCallback, TargetElement, TargetPaste, TargetPasteRows, TargetSelection } from 'ephox/snooker/model/RunOperation';
 import * as Bridge from 'ephox/snooker/test/Bridge';
 
 interface TargetLocation {
@@ -19,6 +19,8 @@ interface ExpCell {
   readonly row: number;
   readonly column: number;
 }
+
+type CellTuple = [section: number, row: number, column: number];
 
 const makeContainer = () =>
   SugarElement.fromHtml<HTMLDivElement>('<div contenteditable="true"></div>');
@@ -104,9 +106,8 @@ const checkPaste = (
   input: string,
   pasteHtml: string,
   operation: OperationCallback<TargetPasteRows>,
-  section: number,
-  row: number,
-  column: number
+  pasteAtCursor: CellTuple,
+  expCursor?: CellTuple
 ): void => {
   const table = SugarElement.fromHtml<HTMLTableElement>(input);
   const container = makeContainer();
@@ -114,15 +115,26 @@ const checkPaste = (
   Insert.append(SugarBody.body(), container);
 
   const pasteTable = SugarElement.fromHtml<HTMLTableElement>('<table><tbody>' + pasteHtml + '</tbody></table>');
-  operation(
+  const result = operation(
     table,
     {
-      selection: [ Hierarchy.follow(table, [ section, row, column, 0 ]).getOrDie(label + ': could not follow selection') ],
+      selection: [
+        Hierarchy.follow(table, [ ...pasteAtCursor, 0 ])
+          .getOrDie(label + `: could not follow selection [${pasteAtCursor}]`)
+      ],
       clipboard: SelectorFilter.descendants(pasteTable, 'tr'),
       generators: Bridge.pasteGenerators
     },
     Bridge.generators
   );
+
+  // Optionally check for the cursor position after the paste operation:
+  if (expCursor) {
+    const actualCursor = result.getOrDie(label + ': could not get table operation result')
+      .cursor.getOrDie(label + ': could not get cursor');
+    const actualPath = Hierarchy.path(table, actualCursor).getOrDie(label + ': could not find path to cursor');
+    Assert.eq('Cursor is not in expected cell.', expCursor, actualPath);
+  }
 
   Assertions.assertHtml(label, expectedHtml, Html.getOuter(table));
   Remove.remove(container);
@@ -203,7 +215,8 @@ const checkDelete = (
   Insert.append(container, table);
   Insert.append(SugarBody.body(), container);
   const cellz = Arr.map(cells, (cell) =>
-    Hierarchy.follow(table, [ cell.section, cell.row, cell.column, 0 ]).getOrDie(label + ': could not find cell')
+    Hierarchy.follow(table, [ cell.section, cell.row, cell.column, 0 ])
+      .getOrDie(label + `: could not find cell: { section: ${cell.section}, row: ${cell.row}, column: ${cell.column} }`)
   );
 
   const result = operation(table, {
@@ -231,9 +244,9 @@ const checkDelete = (
 
   }, (expectedHtml) => {
     Assertions.assertHtml(label, expectedHtml, Html.getOuter(table));
-    Remove.remove(container);
   });
 
+  Remove.remove(container);
   // Ensure all the resize bars are destroyed before of running the next test.
 };
 
@@ -253,9 +266,7 @@ const checkMerge = (
   Insert.append(SugarBody.body(), container);
 
   const target = Bridge.targetStub(selection, bounds, table);
-  const generators = Bridge.generators;
-
-  TableOperations.mergeCells(table, target, generators);
+  TableOperations.mergeCells(table, target, Bridge.generators);
 
   // Let's get rid of size information.
   const all = [ table ].concat(SelectorFilter.descendants(table, 'td,th'));

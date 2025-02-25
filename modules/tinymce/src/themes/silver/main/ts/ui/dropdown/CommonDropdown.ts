@@ -1,15 +1,15 @@
 import {
   AddEventsBehaviour, AlloyComponent, AlloyEvents, AlloyTriggers, Behaviour, CustomEvent, Dropdown as AlloyDropdown, Focusing, GuiFactory, Highlighting,
-  Keying, Memento, Replacing, Representing, SimulatedEvent, SketchSpec, SystemEvents, TieredData, Unselecting
+  Keying, MaxHeight, Memento, NativeEvents, Replacing, Representing, SimulatedEvent, SketchSpec, SystemEvents, TieredData, Tooltipping, Unselecting
 } from '@ephox/alloy';
 import { Toolbar } from '@ephox/bridge';
-import { Arr, Cell, Fun, Future, Id, Merger, Optional } from '@ephox/katamari';
-import { EventArgs } from '@ephox/sugar';
+import { Arr, Cell, Fun, Future, Id, Merger, Optional, Type } from '@ephox/katamari';
+import { EventArgs, SugarElement } from '@ephox/sugar';
 
 import { toolbarButtonEventOrder } from 'tinymce/themes/silver/ui/toolbar/button/ButtonEvents';
 
 import { UiFactoryBackstageShared } from '../../backstage/Backstage';
-import * as ReadOnly from '../../ReadOnly';
+import * as UiState from '../../UiState';
 import { DisablingConfigs } from '../alien/DisablingConfigs';
 import * as UiUtils from '../alien/UiUtils';
 import { renderLabel, renderReplaceableIconFromPack } from '../button/ButtonSlices';
@@ -38,6 +38,7 @@ export interface CommonDropdownSpec<T> {
   readonly disabled?: boolean;
   readonly tooltip: Optional<string>;
   readonly role: Optional<string>;
+  readonly listRole?: string;
   readonly fetch: (comp: AlloyComponent, callback: (tdata: Optional<TieredData>) => void) => void;
   readonly onSetup: (itemApi: T) => OnDestroy<T>;
   readonly getApi: (comp: AlloyComponent) => T;
@@ -46,13 +47,16 @@ export interface CommonDropdownSpec<T> {
   readonly classes: string[];
   readonly dropdownBehaviours: Behaviour.NamedConfiguredBehaviour<any, any, any>[];
   readonly searchable?: boolean;
+  readonly ariaLabel: Optional<string>;
+  readonly context: string;
 }
 
 // TODO: Use renderCommonStructure here.
 const renderCommonDropdown = <T>(
   spec: CommonDropdownSpec<T>,
   prefix: string,
-  sharedBackstage: UiFactoryBackstageShared
+  sharedBackstage: UiFactoryBackstageShared,
+  btnName?: string
 ): SketchSpec => {
   const editorOffCell = Cell(Fun.noop);
 
@@ -103,15 +107,14 @@ const renderCommonDropdown = <T>(
   };
 
   const role = spec.role.fold(() => ({}), (role) => ({ role }));
+  const listRole = Optional.from(spec.listRole).map((listRole) => ({ listRole })).getOr({});
 
-  const tooltipAttributes = spec.tooltip.fold(
+  const ariaLabelAttribute = spec.ariaLabel.fold(
     () => ({}),
-    (tooltip) => {
-      const translatedTooltip = sharedBackstage.providers.translate(tooltip);
+    (ariaLabel) => {
+      const translatedAriaLabel = sharedBackstage.providers.translate(ariaLabel);
       return {
-        // TODO: AP-213 Implement tooltips manually, rather than relying on title
-        'title': translatedTooltip,
-        'aria-label': translatedTooltip
+        'aria-label': translatedAriaLabel
       };
     }
   );
@@ -122,16 +125,20 @@ const renderCommonDropdown = <T>(
   }, sharedBackstage.providers.icons);
 
   const fixWidthBehaviourName = Id.generate('common-button-display-events');
+  // Should we use Id.generate here?
+  const customEventsName = 'dropdown-events';
 
   const memDropdown = Memento.record(
     AlloyDropdown.sketch({
       ...spec.uid ? { uid: spec.uid } : {},
       ...role,
+      ...listRole,
       dom: {
         tag: 'button',
         classes: [ prefix, `${prefix}--select` ].concat(Arr.map(spec.classes, (c) => `${prefix}--${c}`)),
         attributes: {
-          ...tooltipAttributes
+          ...ariaLabelAttribute,
+          ...(Type.isNonNullable(btnName) ? { 'data-mce-name': btnName } : {})
         }
       },
       components: componentRenderPipeline([
@@ -152,21 +159,34 @@ const renderCommonDropdown = <T>(
 
       dropdownBehaviours: Behaviour.derive([
         ...spec.dropdownBehaviours,
-        DisablingConfigs.button(() => spec.disabled || sharedBackstage.providers.isDisabled()),
-        ReadOnly.receivingConfig(),
+        DisablingConfigs.button(() => spec.disabled || sharedBackstage.providers.checkUiComponentContext(spec.context).shouldDisable),
+        UiState.toggleOnReceive(() => sharedBackstage.providers.checkUiComponentContext(spec.context)),
         // INVESTIGATE (TINY-9012): There was a old comment here about something not quite working, and that
         // we can still get the button focused. It was probably related to Unselecting.
         Unselecting.config({}),
         Replacing.config({}),
 
+        ...(spec.tooltip.map((t) => Tooltipping.config(
+          sharedBackstage.providers.tooltips.getConfig({
+            tooltipText: sharedBackstage.providers.translate(t)
+          })
+        ))).toArray(),
+
         // This is the generic way to make onSetup and onDestroy call as the component is attached /
         // detached from the page/DOM.
-        AddEventsBehaviour.config('dropdown-events', [
+        AddEventsBehaviour.config(customEventsName, [
           onControlAttached(spec, editorOffCell),
           onControlDetached(spec, editorOffCell)
         ]),
         AddEventsBehaviour.config(fixWidthBehaviourName, [
-          AlloyEvents.runOnAttached((comp, _se) => UiUtils.forceInitialSize(comp)),
+          AlloyEvents.runOnAttached((comp, _se) => {
+            if (spec.listRole !== 'listbox') {
+              UiUtils.forceInitialSize(comp);
+            }
+          }),
+        ]),
+        AddEventsBehaviour.config('update-dropdown-width-variable', [
+          AlloyEvents.run(SystemEvents.windowResize(), (comp, _se) => AlloyDropdown.close(comp)),
         ]),
         AddEventsBehaviour.config('menubutton-update-display-text', [
           // These handlers are just using Replacing to replace either the menu
@@ -189,11 +209,12 @@ const renderCommonDropdown = <T>(
         // INVESTIGATE (TINY-9014): Explain why we need the events in this order.
         // Ideally, have a test that fails when they are in a different order if order
         // is important
-        mousedown: [ 'focusing', 'alloy.base.behaviour', 'item-type-events', 'normal-dropdown-events' ],
+        [NativeEvents.mousedown()]: [ 'focusing', 'alloy.base.behaviour', 'item-type-events', 'normal-dropdown-events' ],
         [SystemEvents.attachedToDom()]: [
           'toolbar-button-events',
-          'dropdown-events',
-          fixWidthBehaviourName
+          Tooltipping.name(),
+          customEventsName,
+          fixWidthBehaviourName,
         ]
       }),
 
@@ -232,17 +253,28 @@ const renderCommonDropdown = <T>(
           // When the menu is "searchable", use fakeFocus so that keyboard
           // focus stays in the search field
           fakeFocus: spec.searchable,
-          onHighlightItem: updateAriaOnHighlight,
-          onCollapseMenu: (tmenuComp, itemCompCausingCollapse, nowActiveMenuComp) => {
-            // We want to update ARIA on collapsing as well, because it isn't changing
-            // the highlights. So what we need to do is get the right parameters to
-            // pass to updateAriaOnHighlight
-            Highlighting.getHighlighted(nowActiveMenuComp).each((itemComp) => {
-              updateAriaOnHighlight(tmenuComp, nowActiveMenuComp, itemComp);
-            });
-          },
-          onDehighlightItem: updateAriaOnDehighlight
+          // We don't want to update the  `aria-selected` on highlight or dehighlight for the `listbox` role because that is used to indicate the selected item
+          ...(spec.listRole === 'listbox' ? {} : {
+            onHighlightItem: updateAriaOnHighlight,
+            onCollapseMenu: (tmenuComp, itemCompCausingCollapse, nowActiveMenuComp) => {
+              // We want to update ARIA on collapsing as well, because it isn't changing
+              // the highlights. So what we need to do is get the right parameters to
+              // pass to updateAriaOnHighlight
+              Highlighting.getHighlighted(nowActiveMenuComp).each((itemComp) => {
+                updateAriaOnHighlight(tmenuComp, nowActiveMenuComp, itemComp);
+              });
+            },
+            onDehighlightItem: updateAriaOnDehighlight
+          })
         }
+      },
+
+      getAnchorOverrides: () => {
+        return {
+          maxHeightFunction: (element: SugarElement<HTMLElement>, available: number): void => {
+            MaxHeight.anchored()(element, available - 10);
+          },
+        };
       },
 
       fetch: (comp) => Future.nu(Fun.curry(spec.fetch, comp))

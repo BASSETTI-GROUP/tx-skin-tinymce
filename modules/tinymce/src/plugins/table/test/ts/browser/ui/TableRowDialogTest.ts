@@ -2,7 +2,7 @@ import { UiFinder } from '@ephox/agar';
 import { afterEach, describe, it } from '@ephox/bedrock-client';
 import { Arr } from '@ephox/katamari';
 import { SugarBody, SugarElement, SugarNode } from '@ephox/sugar';
-import { TinyAssertions, TinyHooks, TinySelections } from '@ephox/wrap-mcagar';
+import { TinyAssertions, TinyHooks, TinySelections, TinyState } from '@ephox/wrap-mcagar';
 import { assert } from 'chai';
 
 import Editor from 'tinymce/core/api/Editor';
@@ -158,7 +158,7 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
     TinyAssertions.assertContent(editor,
       '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
       '<tbody>' +
-      '<tr style="border-color: blue; border-style: dotted; background-color: rgb(255, 0, 0);">' +
+      '<tr style="border-color: blue; border-style: dotted; background-color: #ff0000;">' +
 
       '<td>a</td>' +
       '</tr>' +
@@ -253,16 +253,16 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
   it('TINY-8625: Table row properties dialog updates multiple rows, but does not override unchanged values', async () => {
     const initialHtml =
       '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
-        '<tbody>' +
-          '<tr style="height: 20px; border-color: blue;">' +
-            '<td data-mce-selected="1">a</td>' +
-            '<td data-mce-selected="1">b</td>' +
-          '</tr>' +
-          '<tr style="height: 20px; border-color: red;">' +
-            '<td data-mce-selected="1">c</td>' +
-            '<td data-mce-selected="1">d</td>' +
-          '</tr>' +
-        '</tbody>' +
+      '<tbody>' +
+      '<tr style="height: 20px; border-color: blue;">' +
+      '<td data-mce-selected="1">a</td>' +
+      '<td data-mce-selected="1">b</td>' +
+      '</tr>' +
+      '<tr style="height: 20px; border-color: red;">' +
+      '<td data-mce-selected="1">c</td>' +
+      '<td data-mce-selected="1">d</td>' +
+      '</tr>' +
+      '</tbody>' +
       '</table>';
 
     const initialData = {
@@ -283,16 +283,16 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
 
     const newHtml =
       '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
-        '<tbody>' +
-          '<tr style="height: 30px; text-align: center; border-color: blue; background-color: red;">' +
-            '<td>a</td>' +
-            '<td>b</td>' +
-          '</tr>' +
-          '<tr style="height: 30px; text-align: center; border-color: red; background-color: red;">' +
-            '<td>c</td>' +
-            '<td>d</td>' +
-          '</tr>' +
-        '</tbody>' +
+      '<tbody>' +
+      '<tr style="height: 30px; text-align: center; border-color: blue; background-color: red;">' +
+      '<td>a</td>' +
+      '<td>b</td>' +
+      '</tr>' +
+      '<tr style="height: 30px; text-align: center; border-color: red; background-color: red;">' +
+      '<td>c</td>' +
+      '<td>d</td>' +
+      '</tr>' +
+      '</tbody>' +
       '</table>';
 
     const editor = hook.editor();
@@ -309,16 +309,16 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
   it('TINY-8625: Table row properties dialog updates multiple rows and allows resetting values', async () => {
     const initialHtml =
       '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
-        '<tbody>' +
-          '<tr style="height: 20px; text-align: center; border-color: blue; border-style: dotted; background-color: red;">' +
-            '<td data-mce-selected="1">a</td>' +
-            '<td data-mce-selected="1">b</td>' +
-          '</tr>' +
-          '<tr style="height: 20px; text-align: center; border-color: blue; border-style: dotted; background-color: red;">' +
-            '<td data-mce-selected="1">c</td>' +
-            '<td data-mce-selected="1">d</td>' +
-          '</tr>' +
-        '</tbody>' +
+      '<tbody>' +
+      '<tr style="height: 20px; text-align: center; border-color: blue; border-style: dotted; background-color: red;">' +
+      '<td data-mce-selected="1">a</td>' +
+      '<td data-mce-selected="1">b</td>' +
+      '</tr>' +
+      '<tr style="height: 20px; text-align: center; border-color: blue; border-style: dotted; background-color: red;">' +
+      '<td data-mce-selected="1">c</td>' +
+      '<td data-mce-selected="1">d</td>' +
+      '</tr>' +
+      '</tbody>' +
       '</table>';
 
     const initialData = {
@@ -341,16 +341,16 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
 
     const newHtml =
       '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
-        '<tbody>' +
-          '<tr>' +
-            '<td>a</td>' +
-            '<td>b</td>' +
-          '</tr>' +
-          '<tr>' +
-            '<td>c</td>' +
-            '<td>d</td>' +
-          '</tr>' +
-        '</tbody>' +
+      '<tbody>' +
+      '<tr>' +
+      '<td>a</td>' +
+      '<td>b</td>' +
+      '</tr>' +
+      '<tr>' +
+      '<td>c</td>' +
+      '<td>d</td>' +
+      '</tr>' +
+      '</tbody>' +
       '</table>';
 
     const editor = hook.editor();
@@ -405,11 +405,369 @@ describe('browser.tinymce.plugins.table.TableRowDialogTest', () => {
   });
 
   it('TINY-9459: Should not open table row properties dialog on noneditable root', () => {
-    TableTestUtils.withNoneditableRootEditor(hook.editor(), (editor) => {
+    TinyState.withNoneditableRootEditor(hook.editor(), (editor) => {
       editor.setContent('<table><tbody><tr><td>x</td></tr></tbody></table>');
       TinySelections.setCursor(editor, [ 0, 0, 0, 0, 0 ], 0);
       editor.execCommand('mceTableRowProps');
       UiFinder.notExists(SugarBody.body(), '.tox-dialog');
     });
+  });
+
+  it('TINY-10617: should not remove td/th heights when not changing height of row (single row)', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr>' +
+      '<td style="height: 20px;">a</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    TinySelections.select(editor, 'td', [ 0 ]);
+    await TableTestUtils.pOpenTableDialog(editor);
+
+    TableTestUtils.assertDialogValues({
+      align: '',
+      height: '',
+      type: 'body',
+      backgroundcolor: '',
+      bordercolor: '',
+      borderstyle: ''
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      align: '',
+      height: '',
+      type: 'body',
+      bordercolor: 'blue',
+      borderstyle: 'dotted',
+      backgroundcolor: '#ff0000'
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="border-color: blue; border-style: dotted; background-color: #ff0000;">' +
+      '<td style="height: 20px;">a</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents();
+  });
+
+  it('TINY-10617: should not remove td/th heights when not changing height of row (multiple rows)', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="height: 20px; border-color: blue;">' +
+      '<td data-mce-selected="1" style="height: 20px;">a</td>' +
+      '<td data-mce-selected="1" style="height: 20px;">b</td>' +
+      '</tr>' +
+      '<tr style="height: 20px; border-color: red;">' +
+      '<td data-mce-selected="1" style="height: 20px;">c</td>' +
+      '<td data-mce-selected="1" style="height: 20px;">d</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    TinySelections.select(editor, 'tr:nth-child(2) td:nth-child(2)', [ 0 ]);
+    await TableTestUtils.pOpenTableDialog(editor);
+    TableTestUtils.assertDialogValues({
+      align: '',
+      height: '20px',
+      type: 'body',
+      backgroundcolor: '',
+      bordercolor: '',
+      borderstyle: ''
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      align: 'center',
+      backgroundcolor: 'red'
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="height: 20px; text-align: center; border-color: blue; background-color: red;">' +
+      '<td style="height: 20px;">a</td>' +
+      '<td style="height: 20px;">b</td>' +
+      '</tr>' +
+      '<tr style="height: 20px; text-align: center; border-color: red; background-color: red;">' +
+      '<td style="height: 20px;">c</td>' +
+      '<td style="height: 20px;">d</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents();
+  });
+
+  it('TINY-10617: should remove td/th heights when changing height of row (single row)', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr>' +
+      '<td style="height: 20px; border-color: green;">a</td>' +
+      '<td style="height: 10px; border-color: yellow;">b</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    TinySelections.select(editor, 'td', [ 0 ]);
+    await TableTestUtils.pOpenTableDialog(editor);
+
+    TableTestUtils.assertDialogValues({
+      align: '',
+      height: '',
+      type: 'body',
+      backgroundcolor: '',
+      bordercolor: '',
+      borderstyle: ''
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      align: '',
+      height: '50px',
+      type: 'body',
+      bordercolor: 'blue',
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="height: 50px; border-color: blue;">' +
+      '<td style="border-color: green;">a</td>' +
+      '<td style="border-color: yellow;">b</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents();
+  });
+
+  it('TINY-10617: should remove td/th heights when changing height of row (multiple rows)', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr>' +
+      '<td data-mce-selected="1" style="height: 20px; border-color: green;">a</td>' +
+      '<td style="height: 10px; border-color: yellow;">b</td>' +
+      '</tr>' +
+      '<tr style="height: 40px;">' +
+      '<td data-mce-selected="1" style="height: 40px; border-color: red;">c</td>' +
+      '<td style="height: 40px; border-color: blue;">d</td>' +
+      '</tr>' +
+      '<tr style="height: 30px;">' +
+      '<td style="height: 30px; border-color: purple;">e</td>' +
+      '<td style="height: 30px; border-color: pink;">f</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    TinySelections.select(editor, 'tr:nth-child(2) td:nth-child(1)', [ 0 ]);
+    await TableTestUtils.pOpenTableDialog(editor);
+
+    TableTestUtils.assertDialogValues({
+      align: '',
+      height: '',
+      type: 'body',
+      backgroundcolor: '',
+      bordercolor: '',
+      borderstyle: ''
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      align: '',
+      height: '50px',
+      type: 'body',
+      bordercolor: 'blue',
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="height: 50px; border-color: blue;">' +
+      '<td style="border-color: green;">a</td>' +
+      '<td style="border-color: yellow;">b</td>' +
+      '</tr>' +
+      '<tr style="height: 50px; border-color: blue;">' +
+      '<td style="border-color: red;">c</td>' +
+      '<td style="border-color: blue;">d</td>' +
+      '</tr>' +
+      '<tr style="height: 30px;">' +
+      '<td style="height: 30px; border-color: purple;">e</td>' +
+      '<td style="height: 30px; border-color: pink;">f</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents();
+  });
+
+  it('TINY-10617: should remove td/th heights when changing height of row (cells with rowpan)', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr>' +
+      '<td style="height: 20px; border-color: green;">a</td>' +
+      '<td rowspan="2" style="height: 10px; border-color: yellow;">b</td>' +
+      '</tr>' +
+      '<tr style="height: 30px;">' +
+      '<td style="height: 30px; border-color: blue;">c</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    TinySelections.select(editor, 'td', [ 0 ]);
+    await TableTestUtils.pOpenTableDialog(editor);
+
+    TableTestUtils.assertDialogValues({
+      align: '',
+      height: '',
+      type: 'body',
+      backgroundcolor: '',
+      bordercolor: '',
+      borderstyle: ''
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      align: '',
+      height: '50px',
+      type: 'body',
+      bordercolor: 'blue',
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="border: 1px solid black; border-collapse: collapse;" border="1">' +
+      '<tbody>' +
+      '<tr style="height: 50px; border-color: blue;">' +
+      '<td style="border-color: green;">a</td>' +
+      '<td style="border-color: yellow;" rowspan="2">b</td>' +
+      '</tr>' +
+      '<tr style="height: 30px;">' +
+      '<td style="height: 30px; border-color: blue;">c</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents();
+  });
+
+  it('TINY-11383: Changing row type from body to header on an indexed table should work', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="border-collapse: collapse; width: 100%;" border="1" data-snooker-col-series="numeric" data-snooker-locked-cols="0">' +
+      '<colgroup>' +
+      '<col style="width: 10%;"><' +
+      'col style="width: 90%;">' +
+      '</colgroup>' +
+      '<tbody>' +
+      '<tr>' +
+      '<td contenteditable="false" data-mce-selected="1">1</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '<tr>' +
+      '<td contenteditable="false">2</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    await TableTestUtils.pOpenTableDialog(editor);
+    TableTestUtils.assertDialogValues({
+      type: 'body',
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      type: 'header',
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="width: 100%; border-collapse: collapse;" border="1" data-snooker-col-series="numeric" data-snooker-locked-cols="0">' +
+      '<colgroup>' +
+      '<col style="width: 10%;">' +
+      '<col style="width: 90%;">' +
+      '</colgroup>' +
+      '<thead>' +
+      '<tr>' +
+      '<td contenteditable="false">1</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+      '<tr>' +
+      '<td contenteditable="false">2</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents([{ type: 'tablemodified', structure: true, style: false }]);
+  });
+
+  it('TINY-11383: Changing row type from heander to body on an indexed table should work', async () => {
+    const editor = hook.editor();
+    editor.setContent(
+      '<table style="width: 100%; border-collapse: collapse;" border="1" data-snooker-col-series="numeric" data-snooker-locked-cols="0">' +
+      '<colgroup>' +
+      '<col style="width: 10%;">' +
+      '<col style="width: 90%;">' +
+      '</colgroup>' +
+      '<thead>' +
+      '<tr>' +
+      '<td contenteditable="false" data-mce-selected="1">1</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+      '<tr>' +
+      '<td contenteditable="false">2</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    await TableTestUtils.pOpenTableDialog(editor);
+    TableTestUtils.assertDialogValues({
+      type: 'header',
+    }, true, generalSelectors);
+
+    TableTestUtils.setDialogValues({
+      type: 'body',
+    }, true, generalSelectors);
+    await TableTestUtils.pClickDialogButton(editor, true);
+
+    TinyAssertions.assertContent(editor,
+      '<table style="width: 100%; border-collapse: collapse;" border="1" data-snooker-col-series="numeric" data-snooker-locked-cols="0">' +
+      '<colgroup>' +
+      '<col style="width: 10%;">' +
+      '<col style="width: 90%;">' +
+      '</colgroup>' +
+      '<tbody>' +
+      '<tr>' +
+      '<td contenteditable="false">1</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '<tr>' +
+      '<td contenteditable="false">2</td>' +
+      '<td>&nbsp;</td>' +
+      '</tr>' +
+      '</tbody>' +
+      '</table>'
+    );
+    assertEvents([{ type: 'tablemodified', structure: true, style: false }]);
   });
 });

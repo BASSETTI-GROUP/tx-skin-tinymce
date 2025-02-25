@@ -16,7 +16,12 @@
 @color-tint: #006ce7;
 @color-white: #fff;
 @color-error: #c00;
+@color-error-element-focus-color: #f00;
+@color-error-element-focus: 0 0 0 1px @color-error-element-focus-color;
 @color-success: #78AB46;
+@color-warning: #FFCC00;
+@color-active: #ffcf30;
+
 @font-stack: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
 
 // Content;
@@ -31,6 +36,10 @@
 // Some useful generic variables
 @panel-border-radius: 6px; // Dialogs, menues etc.
 @control-border-radius: 6px; // Buttons, input fields etc.
+
+// Focus outline
+@keyboard-focus-outline-width: 2px;
+@keyboard-focus-outline-color: @color-tint;
 
 // Font
 @line-height-base: 1.3;

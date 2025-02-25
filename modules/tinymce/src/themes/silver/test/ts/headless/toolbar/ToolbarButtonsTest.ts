@@ -9,8 +9,8 @@ import { assert } from 'chai';
 import { renderMenuButton } from 'tinymce/themes/silver/ui/button/MenuButton';
 import { renderSplitButton, renderToolbarButton, renderToolbarToggleButton } from 'tinymce/themes/silver/ui/toolbar/button/ToolbarButtons';
 
+import TestBackstage from '../../module/TestBackstage';
 import * as TestExtras from '../../module/TestExtras';
-import TestProviders from '../../module/TestProviders';
 
 describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
   const shouldDisable = Cell(false);
@@ -29,7 +29,9 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         },
         components: [
           renderToolbarButton({
+            context: 'any',
             type: 'button',
+            shortcut: Optional.none(),
             enabled: true,
             tooltip: Optional.some('tooltip'),
             icon: Optional.none(),
@@ -42,7 +44,7 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
               store.adder('onAction.1')();
               api.setEnabled(!shouldDisable.get());
             }
-          }, TestProviders)
+          }, TestBackstage().shared.providers)
         ]
       },
 
@@ -53,7 +55,9 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         },
         components: [
           renderToolbarToggleButton({
+            context: 'any',
             type: 'togglebutton',
+            shortcut: Optional.none(),
             enabled: true,
             active: false,
             tooltip: Optional.some('tooltip'),
@@ -68,7 +72,7 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
               api.setEnabled(!shouldDisable.get());
               api.setActive(shouldActivate.get());
             }
-          }, TestProviders)
+          }, TestBackstage().shared.providers)
         ]
       },
 
@@ -79,6 +83,7 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         },
         components: [
           renderSplitButton({
+            context: 'any',
             type: 'splitbutton',
             tooltip: Optional.some('tooltip'),
             icon: Optional.none(),
@@ -119,6 +124,7 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         },
         components: [
           renderMenuButton({
+            context: 'any',
             tooltip: Optional.some('tooltip'),
             icon: Optional.none(),
             text: Optional.some('button4'),
@@ -192,7 +198,6 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         classes: [ arr.has('tox-tbtn') ],
         attrs: {
           'type': str.is('button'),
-          'title': str.is('tooltip'),
           'aria-label': str.is('tooltip')
         },
         children: [
@@ -264,7 +269,6 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         classes: [ arr.has('tox-split-button') ],
         attrs: {
           'role': str.is('button'),
-          'title': str.is('tooltip'),
           'aria-label': str.is('tooltip'),
           'aria-expanded': str.is('false'),
           'aria-haspopup': str.is('true'),
@@ -358,7 +362,6 @@ describe('headless.tinymce.themes.silver.toolbar.ToolbarButtonsTest', () => {
         ],
         attrs: {
           'type': str.is('button'),
-          'title': str.is('tooltip'),
           'aria-label': str.is('tooltip'),
           'aria-expanded': str.is('false'),
           'aria-haspopup': str.is('true')
